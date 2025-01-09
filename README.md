@@ -1,1 +1,4 @@
-# Vulcan
+- omop_data.py: Get OMOP data from the database
+- ML_data.py: Prepare data for NLP
+- ML_train.py: Train the model
+- test.py: Test the model

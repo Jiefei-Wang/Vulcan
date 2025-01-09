@@ -7,7 +7,6 @@ from modules.performance import map_concepts, performance_metrics
 conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
 concept_relationship = pd.read_feather('data/omop_feather/concept_relationship.feather')
 
-
 ####################################
 ## Work on conditions domain
 ## CIM vocabulary maps to standard concepts
@@ -24,7 +23,7 @@ nonstd_conditions = conditions[conditions['standard_concept'] != 'S']
 # nonstd_conditions.vocabulary_id.unique()
 
 nonstd_cim_conditions = nonstd_conditions[nonstd_conditions['vocabulary_id'] == 'CIM10']
-
+nonstd_cim_conditions.iloc[0]
 
 ####################################
 ## Generate embeddings for standard and non-standard concepts
@@ -52,7 +51,7 @@ df_test1 = map_concepts(db1, nonstd_cim_conditions)
 performance_metrics(df_test1,k=1)
 performance_metrics(df_test1,k=10)
 performance_metrics(df_test1,k=50)
-
+nonstd_cim_conditions.iloc[0]
 
 df_test2 = map_concepts(db2, nonstd_cim_conditions)
 performance_metrics(df_test2,k=1)

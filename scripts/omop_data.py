@@ -2,13 +2,16 @@
 ## Key modifications:
 ##  1. Add a column 'std_concept_id' to the concept table.
 ##  2. Remove the concept with no mapping to standard concept.
-
-
 import pandas as pd
 
 # Read dataset
 concept = pd.read_csv('data/omop_csv/CONCEPT.csv', delimiter='\t', low_memory=False, na_filter=False)
 concept_relationship = pd.read_csv('data/omop_csv/CONCEPT_RELATIONSHIP.csv', delimiter='\t', low_memory=False, na_filter=False)
+concept_synonym = pd.read_csv('data/omop_csv/CONCEPT_SYNONYM.csv', delimiter='\t', low_memory=False, na_filter=False)
+
+concept.to_feather('data/omop_feather/concept.feather')
+concept_relationship.to_feather('data/omop_feather/concept_relationship.feather')
+concept_synonym.to_feather('data/omop_feather/concept_synonym.feather')
 
 std_concepts = concept[concept['standard_concept'] == 'S']
 nonstd_concepts = concept[concept['standard_concept'] != 'S']
@@ -48,9 +51,7 @@ concept_merged = concept_merged.groupby('concept_id'
 
 ## Combine the standard and non-standard concepts
 conceptEX = pd.concat([std_concepts, concept_merged])
-
-## set concept_id as index
-conceptEX = conceptEX.set_index('concept_id')
-
 conceptEX.to_feather('data/omop_feather/conceptEX.feather')
-concept_relationship.to_feather('data/omop_feather/concept_relationship.feather')
+
+
+
