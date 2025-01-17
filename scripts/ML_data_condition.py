@@ -17,6 +17,7 @@ concept_relationship = pd.read_feather('data/omop_feather/concept_relationship.f
 std_condition = conceptML1[conceptML1['domain_id'] == 'Condition']
 std_condition.groupby("vocabulary_id").size()
 
+## keep those with at least one mapping to non-standard condition
 std_condition2 = std_condition[std_condition.apply(lambda x: len(x['text']) != 0, axis=1)].copy()
 std_condition2['std_name'] = std_condition2['domain_id'] + ': ' + std_condition2['concept_name']
 
@@ -34,8 +35,7 @@ for i in tqdm(range(len(std_condition2))):
     text = row['text'].tolist() + [concept_name]
     pos_dt = [{'sentence1': std_name, 'sentence2': i, 'label': "equals"} for i in text]
     
-    ## negative sample
-    
+    ## TODO: negative sample
 
 
 

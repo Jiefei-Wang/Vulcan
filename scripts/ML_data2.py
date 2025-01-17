@@ -1,10 +1,13 @@
-## This file is used to generate the data for ML model
-##
-## Idea: map the source data with either
-## 1. name only
-## 2. explanation only
-## 3. name + explanation
-## to standard concept: Name + explanation
+# This file is used to generate the mapping from 
+# standard to non-standard concepts
+#
+# For each standard concept, create columns:
+# - nonstd_ids: list of non-standard concept ids
+# - nonstd_names: list of non-standard concept names (size = nonstd_id)
+# - descriptions: list of non-standard concept descriptions (from UMLS) (size = nonstd_id)
+# - synonym_names: list of concept synonyms (if no synonym, then empty list)
+# 
+# Store the result in data/ML/conceptML.feather
 
 from tqdm import tqdm
 import pandas as pd
@@ -18,7 +21,6 @@ from modules.UMLS_file import read_mrconso, read_mrdef
 concept = pd.read_feather('data/omop_feather/concept.feather')
 concept_relationship = pd.read_feather('data/omop_feather/concept_relationship.feather')
 concept_synonym = pd.read_feather("data/omop_feather/concept_synonym.feather")
-concept_ancestor = pd.read_feather("data/omop_feather/concept_ancestor.feather")
 
 
 ## Read UMLS datasets

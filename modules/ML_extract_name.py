@@ -1,7 +1,16 @@
 import pandas as pd
 
-## For each standard concetp, we extract the non-standard concept names
 def extract_nonstd_names(concept, concept_relationship):
+    """
+    Extract non-standard names for each standard concept
+    
+    Args:
+    concept: pd.DataFrame, concept table
+    concept_relationship: pd.DataFrame, concept_relationship table
+    
+    Returns:
+    pd.DataFrame: concept_id, nonstd
+    """
     std_concepts = concept[concept['standard_concept'] == 'S']
 
     ## for each standard concept, get all non-standard codes
@@ -30,6 +39,16 @@ def extract_nonstd_names(concept, concept_relationship):
 
 
 def extract_synonym(concept, concept_synonym):
+    """
+    Extract synonyms for each standard
+    
+    Args:
+    concept: pd.DataFrame, concept table
+    concept_synonym: pd.DataFrame, concept_synonym table
+    
+    Returns:
+    pd.DataFrame: concept_id, concept_synonym_name
+    """
     std_concepts = concept[concept['standard_concept'] == 'S']
     
     concept_other_names = concept_synonym.merge(
@@ -76,6 +95,17 @@ OMOP_TO_UMLS = {
 ULMS_TO_OMOP = {v: k for k, v in OMOP_TO_UMLS.items()}
 
 def extract_umls_description(std_concepts, mrconso_df, mrdef_df):
+    """
+    Extract UMLS descriptions for each standard concept
+    
+    Args:
+    std_concepts: pd.DataFrame, standard concepts
+    mrconso_df: pd.DataFrame, MRCONSO.RRF
+    mrdef_df: pd.DataFrame, MRDEF.RRF
+    
+    Returns:
+    pd.DataFrame: concept_id, umls_desc
+    """
     std_concepts = std_concepts[std_concepts['standard_concept'] == 'S'].copy()
 
     std_concepts['SAB'] = std_concepts['vocabulary_id'].map(OMOP_TO_UMLS)
