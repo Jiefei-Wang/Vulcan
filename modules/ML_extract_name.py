@@ -11,8 +11,9 @@ def extract_nonstd_names(concept, concept_relationship):
     Returns:
     pd.DataFrame: concept_id, nonstd
     """
+    print("Running new version of function")
     std_concepts = concept[concept['standard_concept'] == 'S']
-
+    
     ## for each standard concept, get all non-standard codes
     nonstd_map = concept_relationship[concept_relationship.relationship_id=='Maps to'][['concept_id_1', 'concept_id_2']].rename(columns={'concept_id_1': 'nonstd_concept_id'})
     nonstd_map = nonstd_map[nonstd_map.nonstd_concept_id!=nonstd_map.concept_id_2]
@@ -33,8 +34,12 @@ def extract_nonstd_names(concept, concept_relationship):
     ## aggregate, each concept can have multiple nonstandard concept name
     concept_merged3 = concept_merged2.groupby('concept_id'
         ).agg({
-            'nonstd_name': lambda x: list(x)}
-        ).reset_index()
+            'nonstd_name': lambda x: list(x),
+            'nonstd_concept_id': lambda x: list(x)
+        }).reset_index()
+        
+    print(concept_merged3.columns)
+        
     return concept_merged3
 
 
