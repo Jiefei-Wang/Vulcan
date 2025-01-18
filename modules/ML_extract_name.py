@@ -2,16 +2,28 @@ import pandas as pd
 
 def extract_nonstd_names(concept, concept_relationship):
     """
-    Extract non-standard names for each standard concept
+    Extract and map non-standard names to their corresponding standard concept
+    
+    This function identifies standard concepts and finds their associated non-standard
+    names through concept relationships. It aggregates multiple non-standard names
+    that map to the same standard concept.
     
     Args:
     concept: pd.DataFrame, concept table
+        - concept_id: unique identifier for a concept
+        - standard_concept: 'S' if standard, 'NA' if non-standard
+        - concept_name: name of the concept
     concept_relationship: pd.DataFrame, concept_relationship table
+        - concept_id_1: concept_id of the first concept
+        - concept_id_2: concept_id of the second concept
+        - relationship_id: identifier for the relationship between the two concepts
     
     Returns:
-    pd.DataFrame: concept_id, nonstd
+    pd.DataFrame: A dataframe with the following columns:
+        - concept_id: unique identifier for a concept
+        - nonstd_name: list of non-standard concept names
+        - nonstd_concept_id: list of non-standard concept ids
     """
-    print("Running new version of function")
     std_concepts = concept[concept['standard_concept'] == 'S']
     
     ## for each standard concept, get all non-standard codes
@@ -37,22 +49,29 @@ def extract_nonstd_names(concept, concept_relationship):
             'nonstd_name': lambda x: list(x),
             'nonstd_concept_id': lambda x: list(x)
         }).reset_index()
-        
-    print(concept_merged3.columns)
-        
+                
     return concept_merged3
 
 
 def extract_synonym(concept, concept_synonym):
     """
-    Extract synonyms for each standard
+    Extract and aggregate concept synonyms for each standard concept. 
+    
+    This function identifies standard concepts and collects all their associated
+    synonyms from the concept_synonym table, grouping multiple synonyms per concept.
     
     Args:
-    concept: pd.DataFrame, concept table
-    concept_synonym: pd.DataFrame, concept_synonym table
+        concept (pd.DataFrame): Concept table. Required columns:
+            - concept_id
+            - standard_concept
+        concept_synonym (pd.DataFrame): Synonym table. Required columns:
+            - concept_id
+            - concept_synonym_name
     
     Returns:
-    pd.DataFrame: concept_id, concept_synonym_name
+        pd.DataFrame: A dataframe with the following columns:
+            - concept_id: ID of the standard concept
+            - concept_synonym_name: List of synonym names for this concept
     """
     std_concepts = concept[concept['standard_concept'] == 'S']
     
@@ -101,15 +120,30 @@ ULMS_TO_OMOP = {v: k for k, v in OMOP_TO_UMLS.items()}
 
 def extract_umls_description(std_concepts, mrconso_df, mrdef_df):
     """
-    Extract UMLS descriptions for each standard concept
+    Extracts UMLS definitions for standard concepts by mapping between OMOP and UMLS vocabularies.
+    
+    This function maps standard concepts to their UMLS CUIs using MRCONSO.RRF, then retrieves 
+    their definitions from MRDEF.RRF. It handles vocabulary mapping, removes duplicates, and 
+    filters out concepts without definitions.
     
     Args:
-    std_concepts: pd.DataFrame, standard concepts
-    mrconso_df: pd.DataFrame, MRCONSO.RRF
-    mrdef_df: pd.DataFrame, MRDEF.RRF
+        std_concepts (pd.DataFrame): Standard concepts table. Required columns:
+            - concept_id
+            - standard_concept
+            - vocabulary_id
+            - concept_code
+        mrconso_df (pd.DataFrame): UMLS MRCONSO file. Required columns:
+            - CUI
+            - SAB
+            - CODE
+        mrdef_df (pd.DataFrame): UMLS MRDEF file. Required columns:
+            - CUI
+            - DEF
     
     Returns:
-    pd.DataFrame: concept_id, umls_desc
+        pd.DataFrame: A dataframe with the following columns:
+            - concept_id: ID of the standard concept
+            - umls_desc: List of unique UMLS
     """
     std_concepts = std_concepts[std_concepts['standard_concept'] == 'S'].copy()
 
