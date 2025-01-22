@@ -4,11 +4,12 @@
 # For each standard concept, create columns:
 # - nonstd_ids: list of non-standard concept ids
 # - nonstd_names: list of non-standard concept names (size = nonstd_id)
-# - descriptions: list of non-standard concept descriptions (from UMLS) (size = nonstd_id)
+# - descriptions: list of concept descriptions (from UMLS)
 # - synonym_names: list of concept synonyms (if no synonym, then empty list)
 # 
 # Store the result in data/ML/conceptML.feather
 import importlib
+import modules
 from tqdm import tqdm
 import pandas as pd
 from modules.ML_extract_name import extract_nonstd_names, extract_synonym, extract_umls_description
@@ -32,12 +33,17 @@ mrconso_df = read_mrconso(mrconso_path) # Reads UMLS concept names and relations
 mrdef_df = read_mrdef(umls_def_path) # Reads UMLS concept definitions
 
 
-# Extract various concept names and descriptions
-std_concept = concept[concept['standard_concept'] == 'S']  # Filter standard concepts only
-nonstd_names = extract_nonstd_names(concept, concept_relationship)  # Get mapped non-standard names
+# Extract standard concept names and descriptions
+std_concept = concept[concept['standard_concept'] == 'S']
 
-synonum_names = extract_synonym(concept, concept_synonym) # Get concept synonyms
-umls_names = extract_umls_description(concept, mrconso_df, mrdef_df) # Get UMLS definitions
+# Extract a mapping of standard concepts to non-standard names
+nonstd_names = extract_nonstd_names(concept, concept_relationship) 
+
+# Get concept synonyms
+synonum_names = extract_synonym(concept, concept_synonym)
+
+# Get UMLS definitions
+umls_names = extract_umls_description(concept, mrconso_df, mrdef_df)
 
 # Define essential columns to keep from standard concepts
 column_keep = ['concept_id', 'concept_name', 'domain_id', 'vocabulary_id', 'concept_code']
@@ -57,6 +63,9 @@ conceptML = pd.merge(
     umls_names,
     on = 'concept_id',
     how = 'left'
+).rename(columns={
+    'umls_desc': 'descriptions',
+    'concept_synonym_name': 'synonym_name'}
 )
 
 ## combine all names into one

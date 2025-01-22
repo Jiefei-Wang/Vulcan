@@ -28,6 +28,7 @@ def extract_nonstd_names(concept, concept_relationship):
     
     ## for each standard concept, get all non-standard codes
     nonstd_map = concept_relationship[concept_relationship.relationship_id=='Maps to'][['concept_id_1', 'concept_id_2']].rename(columns={'concept_id_1': 'nonstd_concept_id'})
+    ## remove the concept that maps to itself (for standard concept)
     nonstd_map = nonstd_map[nonstd_map.nonstd_concept_id!=nonstd_map.concept_id_2]
 
     concept_merged = std_concepts.merge(
