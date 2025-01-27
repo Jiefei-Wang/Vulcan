@@ -8,10 +8,13 @@ import pandas as pd
 concept = pd.read_csv('data/omop_csv/CONCEPT.csv', delimiter='\t', low_memory=False, na_filter=False)
 concept_relationship = pd.read_csv('data/omop_csv/CONCEPT_RELATIONSHIP.csv', delimiter='\t', low_memory=False, na_filter=False)
 concept_synonym = pd.read_csv('data/omop_csv/CONCEPT_SYNONYM.csv', delimiter='\t', low_memory=False, na_filter=False)
+concept_ancestor = pd.read_csv('data/omop_csv/CONCEPT_ANCESTOR.csv', delimiter='\t', low_memory=False, na_filter=False)
 
 concept.to_feather('data/omop_feather/concept.feather')
 concept_relationship.to_feather('data/omop_feather/concept_relationship.feather')
 concept_synonym.to_feather('data/omop_feather/concept_synonym.feather')
+concept_ancestor.to_feather('data/omop_feather/concept_ancestor.feather')
+
 
 std_concepts = concept[concept['standard_concept'] == 'S']
 nonstd_concepts = concept[concept['standard_concept'] != 'S']
