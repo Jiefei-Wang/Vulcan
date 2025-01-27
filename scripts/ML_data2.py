@@ -6,6 +6,7 @@
 # - nonstd_names: list of non-standard concept names (size = nonstd_id)
 # - descriptions: list of concept descriptions (from UMLS)
 # - synonym_names: list of concept synonyms (if no synonym, then empty list)
+# If a value in a column is empty, it must be None
 # 
 # Store the result in data/ML/conceptML.feather
 import importlib
