@@ -245,7 +245,8 @@ def generate_negative_samples(
         right_on='index',
         how='inner'
     ).drop(columns=['choices']).reset_index(drop=True)
-               
+    
+    negative_samples['label1'] = 0
     negative_samples['source'] = 'negative'
     
     negative_samples.columns
