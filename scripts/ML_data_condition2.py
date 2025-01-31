@@ -31,10 +31,13 @@
 # loss2 = negative - positive
 #
 # total loss = loss1 + loss2 + loss3
-
+import importlib
+import modules
 from tqdm import tqdm
 import pandas as pd
 import random
+from modules.ML_sampling import generate_positive_samples, generate_negative_samples, create_relation_maps, generate_parent_child_positive_samples, generate_negative_parent_child_samples
+importlib.reload(modules.ML_sampling)
 from modules.ML_sampling import generate_positive_samples, generate_negative_samples, create_relation_maps, generate_parent_child_positive_samples, generate_negative_parent_child_samples
 
 # Precise mapping, sentence1 maps to sentence 2
@@ -65,10 +68,12 @@ std_target_with_nonstd["all_nonstd"] = std_target_with_nonstd[["nonstd_name", "s
 
 print(len(std_target_with_nonstd))  # 101896
 print(std_target_with_nonstd.columns)
-# Index(['concept_id', 'concept_name', 'domain_id', 'vocabulary_id',
-#        'concept_code', 'nonstd_name', 'nonstd_concept_id', 'synonym_name',
-#        'descriptions', 'std_name'],
-#       dtype='object')
+"""
+Index(['concept_id', 'concept_name', 'domain_id', 'vocabulary_id',
+       'concept_code', 'nonstd_name', 'nonstd_concept_id', 'synonym_name',
+       'descriptions', 'std_name', 'all_nonstd'],
+      dtype='object')
+"""
 
 
 # Create positive samples test
@@ -81,7 +86,6 @@ positive_sample_dataset = generate_positive_samples(
 non_standard_count = positive_sample_dataset['sentence2'].nunique()  
 print(f"Number of non-standard samples: {non_standard_count}") #487682 unique non-standard samples
 print(positive_sample_dataset.columns) # ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label1', 'source']
-
 # distribution of source 
 print(positive_sample_dataset['source'].value_counts(normalize=True))
 
@@ -91,7 +95,6 @@ nonstd_name     0.667803
 synonym_name    0.246849
 descriptions    0.085348
 """
-
 
 
 target_ids = std_target_with_nonstd['concept_id']
