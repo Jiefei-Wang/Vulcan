@@ -81,3 +81,4 @@ class ChromaVecDB():
     def get_doc_name(self):
         return self.doc_name
         
+        

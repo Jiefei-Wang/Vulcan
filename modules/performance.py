@@ -8,7 +8,7 @@ def find_index(lst, value):
     except ValueError:
         return None
 
-def map_concepts(db, df, k=50, n_results=100):
+def map_concepts(db, df, n_results=100):
     results = db.query(
         df,
         n_results = n_results
