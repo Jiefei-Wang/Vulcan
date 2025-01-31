@@ -245,10 +245,187 @@ def generate_negative_samples(
         right_on='index',
         how='inner'
     ).drop(columns=['choices']).reset_index(drop=True)
-               
+    
+    negative_samples['label1'] = 0
     negative_samples['source'] = 'negative'
     
     negative_samples.columns
     # ['sentence1', 'concept_id1', 'index', 'concept_id2', 'sentence2', 'source']
     
     return negative_samples
+
+
+def generate_parent_child_positive_samples(
+    relation_maps_expanded_pairs: pd.DataFrame,
+    filtered_concept_id_name_df: pd.DataFrame,
+    relationship_type: str = "ancestor"
+):
+    """
+    Generate parent-child or child-parent relationship dataset with concept names.
+
+    Args:
+        relation_maps_expanded_pairs (pd.DataFrame): Exploded relation_maps dataset.
+        filtered_concept_id_name_df (pd.DataFrame): Dataset containing concept_id and concept_name.
+        relationship_type (str): Relationship type to filter, either "ancestor" (parent -> child) or "offspring" (child -> parent).
+
+    Returns:
+        pd.DataFrame: Relationship dataset with concept names and separation levels.
+    """
+    if relationship_type not in ["ancestor", "offspring"]:
+        raise ValueError("relationship_type must be either 'ancestor' (parent -> child) or 'offspring' (child -> parent).")
+
+    # extract valid concept IDs
+    valid_concept_ids = set(filtered_concept_id_name_df["concept_id"])
+    
+    relationship_pairs = relation_maps_expanded_pairs[relation_maps_expanded_pairs["type"] == relationship_type]
+
+    # filter relationship_pairs (remove rows where either ID is missing)
+    relationship_pairs = relationship_pairs[
+        (relationship_pairs["from_concept_id"].isin(valid_concept_ids)) &
+        (relationship_pairs["to_concept_id"].isin(valid_concept_ids))
+    ].copy()
+    
+
+    # merge to get concept names based on relationship type
+    if relationship_type == "ancestor":
+        relationship_pairs = relationship_pairs.merge(
+            filtered_concept_id_name_df, left_on="from_concept_id", right_on="concept_id", how="left"
+        ).rename(columns={"concept_name": "parent_name", "from_concept_id": "parent_id"}).drop(columns=["concept_id"])
+
+        relationship_pairs = relationship_pairs.merge(
+            filtered_concept_id_name_df, left_on="to_concept_id", right_on="concept_id", how="left"
+        ).rename(columns={"concept_name": "child_name", "to_concept_id": "child_id"}).drop(columns=["concept_id"])
+
+    elif relationship_type == "offspring":
+        relationship_pairs = relationship_pairs.merge(
+            filtered_concept_id_name_df, left_on="to_concept_id", right_on="concept_id", how="left"
+        ).rename(columns={"concept_name": "parent_name", "to_concept_id": "parent_id"}).drop(columns=["concept_id"])
+
+        relationship_pairs = relationship_pairs.merge(
+            filtered_concept_id_name_df, left_on="from_concept_id", right_on="concept_id", how="left"
+        ).rename(columns={"concept_name": "child_name", "from_concept_id": "child_id"}).drop(columns=["concept_id"])
+        
+    relationship_pairs["direction"] = "parent_to_child" if relationship_type == "ancestor" else "child_to_parent"
+
+    final_samples = relationship_pairs[[
+        "parent_name", "child_name", "parent_id", "child_id", 
+        "min_levels_of_separation", "max_levels_of_separation", "direction"
+    ]]
+
+    return final_samples
+
+
+def generate_negative_parent_child_samples(
+    positive_parent_child: pd.DataFrame,
+    relation_maps_expanded_pairs: pd.DataFrame,
+    all_concept_ids: pd.DataFrame,
+    relationship_type: str = "ancestor",
+    n_neg: int = 4,
+    seed: int = 42
+) -> pd.DataFrame:
+    """
+    Generate negative samples for parent-child or child-parent relationships efficiently.
+    Parent->child (ancestor) -> selected children is not a actual children of the parent 
+    Output format: parent_name -> child_name
+    Child -> Parent (offspring) -> selected parent is not a actual parent of the child 
+    Output format: child_name -> parent_name 
+
+    Args:
+        positive_parent_child (pd.DataFrame): Positive samples containing ["parent_id", "child_id", "parent_name", "child_name"].
+        relation_maps_expanded_pairs (pd.DataFrame): Exploded relation_maps dataset.
+        all_concept_ids (pd.DataFrame): Dataset containing ["concept_id", "concept_name"].
+        relationship_type (str): Either "ancestor" (parent -> child) or "offspring" (child -> parent).
+        n_neg (int): Number of negative samples per parent-child pair.
+        seed (int): Random seed for reproducibility.
+
+    Returns:
+        pd.DataFrame: Negative samples dataset with ["parent_name", "child_name", "parent_id", "child_id", "label", "source"].
+    """
+    if relationship_type not in ["ancestor", "offspring"]:
+        raise ValueError("relationship_type must be either 'ancestor' (parent -> child) or 'offspring' (child -> parent).")
+
+    random.seed(seed)
+
+    # create valid relationship mappings based on relationship type
+    if relationship_type == "ancestor":
+        relation_maps = relation_maps_expanded_pairs[['parent_id', 'child_id']].copy()
+        relation_maps = relation_maps.groupby('parent_id').agg({'child_id': set})
+        parent_to_children = relation_maps['child_id'].to_dict()
+    else:  # relationship_type == "offspring"
+        relation_maps = relation_maps_expanded_pairs[['child_id', 'parent_id']].copy()
+        relation_maps = relation_maps.groupby('child_id').agg({'parent_id': set})
+        child_to_parents = relation_maps['parent_id'].to_dict()
+
+    # get all valid concept IDs once
+    all_std_ids = list(all_concept_ids["concept_id"])
+    all_std_ids_set = set(all_std_ids)
+
+    negative_samples = positive_parent_child.copy()
+    
+    all_parent_ids = []
+    all_parent_names = []
+    all_child_ids = []
+    all_child_names = []
+    
+    # process each parent/child 
+    for _, row in tqdm(negative_samples.iterrows(), total=len(negative_samples)):
+        if relationship_type == "ancestor":
+            parent_id = row["parent_id"]
+            parent_name = row["parent_name"]
+            exclude_ids = parent_to_children.get(parent_id, set())
+
+            # Generate negative child candidates
+            choices = random.sample(all_std_ids, 2 * n_neg)
+            choices_filtered = list(set(choices) - exclude_ids)
+
+        else:  # relationship_type == "offspring"
+            child_id = row["child_id"]
+            child_name = row["child_name"]
+            exclude_ids = child_to_parents.get(child_id, set())
+
+            # Generate negative parent candidates
+            choices = random.sample(all_std_ids, 2 * n_neg)
+            choices_filtered = list(set(choices) - exclude_ids)
+
+        # get n_neg negative samples
+        if len(choices_filtered) < n_neg:
+            candidate_ids = list(all_std_ids_set - exclude_ids - set(choices_filtered))
+            n_more_needed = n_neg - len(choices_filtered)
+            if candidate_ids:
+                n_more_needed = min(n_more_needed, len(candidate_ids))
+                choices_filtered.extend(random.sample(candidate_ids, n_more_needed))
+
+        final_choices = choices_filtered[:n_neg]
+
+        # Extend results based on relationship type
+        if relationship_type == "ancestor":
+            all_parent_ids.extend([parent_id] * len(final_choices))
+            all_parent_names.extend([parent_name] * len(final_choices))
+            all_child_ids.extend(final_choices)
+        else:  # relationship_type == "offspring"
+            all_child_ids.extend([child_id] * len(final_choices))
+            all_child_names.extend([child_name] * len(final_choices))
+            all_parent_ids.extend(final_choices)
+
+    # create final DataFrame all at once
+    concept_id_to_name = all_concept_ids.set_index("concept_id")["concept_name"].to_dict()
+
+    if relationship_type == "ancestor":
+        all_child_names = [concept_id_to_name.get(cid, "Unknown") for cid in all_child_ids]
+    else:  # relationship_type == "offspring"
+        all_parent_names = [concept_id_to_name.get(pid, "Unknown") for pid in all_parent_ids]
+
+    direction_label = "parent_to_child" if relationship_type == "ancestor" else "child_to_parent"
+
+    final_df = pd.DataFrame({
+        'parent_id': all_parent_ids,
+        'parent_name': all_parent_names,
+        'child_id': all_child_ids,
+        'child_name': all_child_names,
+        'direction': direction_label,
+        'label': 0,  
+        'source': 'negative'
+    })
+    return final_df[[
+        "parent_name", "child_name", "parent_id", "child_id", "direction", "label", "source"
+    ]]
