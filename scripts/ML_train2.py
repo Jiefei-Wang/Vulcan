@@ -4,31 +4,21 @@ os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
 import torch
 import pandas as pd
 import numpy as np
-from sentence_transformers import SentenceTransformer, SentenceTransformerTrainer, losses
+# from transformers import AutoTokenizer, AutoModel
+from sentence_transformers import SentenceTransformer, SentenceTransformerTrainer, losses, models
 from sentence_transformers.training_args import SentenceTransformerTrainingArguments
-from datasets import Dataset
-
+from datasets import Dataset, DatasetDict, concatenate_datasets
 
 ## make sure cuda is available
 torch.cuda.is_available()
 
-## Load the dataset
-positive_sample_dataset = pd.read_feather('data/ML/conceptML_positive.feather')
-negative_sample_dataset = pd.read_feather('data/ML/conceptML_negative.feather')
-dataset_pd = pd.concat([positive_sample_dataset, negative_sample_dataset])
+dataset_dict = DatasetDict.load_from_disk('data/train_dataset_dict')
 
-## Check for missing values
-dataset_pd[dataset_pd[['sentence1','sentence2','label1']].isnull().any(axis=1)]
+## combine matching and relation
+dataset_matching = dataset_dict['matching']
+dataset_relation = dataset_dict['relation']
 
-
-## pandas dataframe to datasets
-dataset_pd = dataset_pd.reset_index(drop=True)
-dataset = Dataset.from_pandas(dataset_pd)
-
-## rename label1 to label
-dataset = dataset.rename_column('label1', 'label')
-## keep only sentence1, sentence2, and label
-dataset = dataset.remove_columns(['concept_id1', 'concept_id2', 'source', 'index'])
+dataset = concatenate_datasets([dataset_matching, dataset_relation])
 
 subset = dataset.select(range(1024*8))
 
@@ -41,6 +31,24 @@ test_dataset = dt['test']
 
 
 model = SentenceTransformer('models/all-MiniLM-L6-v2')
+
+## add special tokens
+transformer = model[0]  
+tokenizer = transformer.tokenizer
+auto_model = transformer.auto_model
+
+# Now you can add special tokens to the tokenizer
+special_tokens_dict = {
+    "additional_special_tokens": ["[MATCHING]", "[RELATION]"]
+}
+num_added_tokens = tokenizer.add_special_tokens(special_tokens_dict)
+
+# Resize the model embeddings if we added tokens
+if num_added_tokens > 0:
+    auto_model.resize_token_embeddings(len(tokenizer))
+
+
+
 train_loss = losses.ContrastiveLoss(model=model)
 
 output_dir = "models/fine-tuned2"

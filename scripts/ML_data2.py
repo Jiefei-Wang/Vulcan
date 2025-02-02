@@ -69,6 +69,7 @@ conceptML = pd.merge(
     'concept_synonym_name': 'synonym_name'}
 )
 
+
 ## combine all names into one
 # columns_combine = ['nonstd_name', 'concept_synonym_name', 'umls_desc']
 # conceptML1 = conceptML.copy()  

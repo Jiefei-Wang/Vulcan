@@ -3,22 +3,21 @@ import random
 from tqdm import tqdm
 
 
+def get_sentence_name(domain_id, concept_name):
+    sentence_name = domain_id + ': ' + concept_name
+    return sentence_name
 
-def create_relation_maps(concept_ancestor, target_ids):
+
+def get_filtered_concept_ancestor(concept_ancestor, target_ids):
     """
-    Create a mapping between standard concepts and their parents/children.
-
+    Filter the concept_ancestor table to include only relevant concepts.
+    
     Args:
         concept_ancestor (pd.DataFrame): The concept_ancestor table.
-        target_ids (pd.DataFrame): Which standard concepts to consider.
-        
+        target_ids (list): List of target concept IDs.
     Returns:
-        pd.DataFrame: A DataFrame with the mapping between standard concepts and their parents/children
-        columns: ['from_concept_id', 'to_concept_id', 'min_levels_of_separation', 'max_levels_of_separation', 'type'
-    
+        pd.DataFrame: Filtered concept_ancestor table.
     """
-    ## keep those that are in the target concept list
-    ## Remove the concept that maps to itself
     concept_ancestor_filtered = concept_ancestor[
         (
             concept_ancestor['ancestor_concept_id'].isin(target_ids)|
@@ -26,27 +25,39 @@ def create_relation_maps(concept_ancestor, target_ids):
         )&
         concept_ancestor['min_levels_of_separation']!=0
         ]
+    return concept_ancestor_filtered
 
+
+
+def create_relation_maps(concept_ancestor):
+    """
+    Create a mapping between standard concepts and their parents/children.
+
+    Args:
+        concept_ancestor (pd.DataFrame): The concept_ancestor table.
+        
+    Returns:
+        pd.DataFrame: A DataFrame with the mapping between standard concepts and their parents/children
+        columns: ['from_concept_id', 'to_concept_id', 'min_levels_of_separation', 'max_levels_of_separation', 'type'
+    
+    """
+    
+    ## Remove the concept that maps to itself
     ## For a given standard concept, create a mapping to its children
-    concept_ancestor_map = concept_ancestor_filtered[
-        concept_ancestor_filtered['ancestor_concept_id'].isin(target_ids)
-    ].rename(
+    concept_ancestor_map = concept_ancestor.rename(
             columns={
             'ancestor_concept_id': 'from_concept_id',
             'descendant_concept_id': 'to_concept_id'
     })
+    concept_ancestor_map['type']='ancestor_to_descendant'
 
     ## For a given standard concept, create a mapping to its parents
-    concept_offspring_map = concept_ancestor_filtered[
-        concept_ancestor_filtered['descendant_concept_id'].isin(target_ids)
-    ].rename(
+    concept_offspring_map = concept_ancestor.rename(
             columns={
             'descendant_concept_id': 'from_concept_id',
             'ancestor_concept_id': 'to_concept_id'
     })
-
-    concept_ancestor_map['type']='ancestor'
-    concept_offspring_map['type']='offspring'
+    concept_offspring_map['type']='descendant_to_ancestor'
 
     ## combine the two mappings
     relation_maps = pd.concat([concept_ancestor_map, concept_offspring_map]
@@ -62,11 +73,10 @@ def create_relation_maps(concept_ancestor, target_ids):
 
 
 
-
 # df = std_condition_with_nonstd_updated.copy()
 # columns = ['nonstd_name', 'synonym_name', 'descriptions']
 # column_ids = ['nonstd_concept_id', None, None]
-def generate_positive_samples(df, columns, column_ids):
+def generate_matching_positive_samples(df, columns, column_ids):
     """
     Create a dataset that contains 1-1 mappings between standard concepts and non-standard concepts.
 
@@ -78,7 +88,7 @@ def generate_positive_samples(df, columns, column_ids):
     Returns:
         pd.DataFrame: A processed dataset with exploded rows and additional metadata.
     """
-    column_keep = ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label1', 'source']
+    column_keep = ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label', 'source']
     result_frames = []
     for idx in range(len(columns)):
         column = columns[idx]
@@ -99,7 +109,7 @@ def generate_positive_samples(df, columns, column_ids):
         else:
             exploded_df['concept_id2'] = None
         exploded_df['source'] = column
-        exploded_df['label1'] = 1
+        exploded_df['label'] = 1
         exploded_df = exploded_df[column_keep]
         ## save as excel for inspection
         ## exploded_df.to_excel(f'positive_samples_{column}.xlsx', index=False)
@@ -111,10 +121,10 @@ def generate_positive_samples(df, columns, column_ids):
 
 # positive_samples = positive_sample_dataset
 
-def generate_negative_samples(
-    positive_samples: pd.DataFrame,
-    relation_maps: pd.DataFrame,
-    std_target_with_nonstd: pd.DataFrame,
+def generate_matching_negative_samples(
+    positive_dataset_matching: pd.DataFrame,
+    concept_ancestor: pd.DataFrame,
+    std_target_for_matching: pd.DataFrame,
     n_neg: int = 4,
     seed: int = 42
 ) -> pd.DataFrame:
@@ -125,23 +135,30 @@ def generate_negative_samples(
     ----------
     positive_samples : pd.DataFrame
         Must contain at least columns: ["sentence1", "concept_id1"].
-    relation_maps : pd.DataFrame
-        includes columns ["from_concept_id", "to_concept_id"] 
-        where to_concept_id is a list of parent/child for that from_concept_id.
-    std_target_with_nonstd : pd.DataFrame
+        
+    concept_ancestor : pd.DataFrame
+        
+    std_target_for_matching : pd.DataFrame
         Must contain ["concept_id", "all_nonstd", "std_name"] for standard concepts.
+        
     n_neg : int
         Number of negative samples to generate per positive sample row.
+        
     seed : int
         Random seed for reproducible sampling.
         
     Returns
     -------
     pd.DataFrame
-        Columns: ["sentence1", "sentence2", "concept_id1", "concept_id2", "label1", "source"] 
-        with label1 = 0 for negatives, source = "negative".
+        Columns: ["sentence1", "sentence2", "concept_id1", "concept_id2", "label", "source"] 
+        with label = 0 for negatives, source = "negative".
     """
     random.seed(seed)
+    
+    target_ids_for_matching = std_target_for_matching['concept_id']
+    concept_ancestor_filtered = get_filtered_concept_ancestor(concept_ancestor, target_ids_for_matching)
+    relation_maps = create_relation_maps(concept_ancestor_filtered)
+    len(relation_maps) # 168816
     
     # Make a dict to map std concept id to its exclusion list
     relation_maps2 = relation_maps[['from_concept_id', 'to_concept_id']].copy()
@@ -150,12 +167,13 @@ def generate_negative_samples(
     std_id_to_excluded = relation_maps2.to_dict()['to_concept_id']
     
     ## prepare the mapping from concept_id to all possible names
-    std_maps_df = std_target_with_nonstd[['concept_id', "all_nonstd", "std_name"]].copy()
+    std_maps_df = std_target_for_matching[['concept_id', "all_nonstd", "std_name"]].copy()
     std_maps_df["all_names"] = std_maps_df.apply(
         lambda x: x["all_nonstd"] + [x["std_name"]], axis=1
     )
     std_maps_df['maps_num'] = std_maps_df['all_names'].apply(lambda x: len(x))
     
+    ## Attach sample_idx to each name for sampling
     ## Column: concept_id, all_names, sample_idx
     id_to_names_df=std_maps_df[['concept_id', 'all_names']].copy()
     id_to_names_df['sample_idx'] = id_to_names_df['all_names'].apply(lambda x: [i for i in range(len(x))])
@@ -168,13 +186,13 @@ def generate_negative_samples(
     # 1. randomly sample 2*n_neg standard concept IDs
     # 2. filter out the ones in the exclusion list
     # 3. keep n_neg samples from the remaining set
-    all_std_ids = std_target_with_nonstd["concept_id"].to_list()
+    all_std_ids = std_target_for_matching["concept_id"].to_list()
     all_std_ids_set = set(all_std_ids)
     
     # 1. randomly sample 2*n_neg standard concept IDs
-    negative_samples = positive_samples[['sentence1', 'concept_id1']].copy()
+    negative_samples = positive_dataset_matching[['sentence1', 'concept_id1']].copy()
     negative_samples['index'] = negative_samples.index
-    negative_samples["choices"] = [random.sample(all_std_ids, 2*n_neg) for _ in range(len(positive_samples))]
+    negative_samples["choices"] = [random.sample(all_std_ids, 2*n_neg) for _ in range(len(positive_dataset_matching))]
     
     ## Refine the sampled choices such that they are not in the exclude set
     for i, row in tqdm(negative_samples.iterrows(), total=len(negative_samples)):
@@ -246,8 +264,10 @@ def generate_negative_samples(
         how='inner'
     ).drop(columns=['choices']).reset_index(drop=True)
     
-    negative_samples['label1'] = 0
-    negative_samples['source'] = 'negative'
+    negative_samples['label'] = 0
+    negative_samples['source'] = 'matching_negative'
+    
+    negative_samples = negative_samples[['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label', 'source']]
     
     negative_samples.columns
     # ['sentence1', 'concept_id1', 'index', 'concept_id2', 'sentence2', 'source']
@@ -255,177 +275,133 @@ def generate_negative_samples(
     return negative_samples
 
 
-def generate_parent_child_positive_samples(
-    relation_maps_expanded_pairs: pd.DataFrame,
-    filtered_concept_id_name_df: pd.DataFrame,
-    relationship_type: str = "ancestor"
+def generate_relation_positive_samples(
+    concept_ancestor_filtered: pd.DataFrame,
+    concept: pd.DataFrame
 ):
     """
-    Generate parent-child or child-parent relationship dataset with concept names.
-
+    Generate positive samples for ancestor-descendant relationships.
+    
     Args:
-        relation_maps_expanded_pairs (pd.DataFrame): Exploded relation_maps dataset.
-        filtered_concept_id_name_df (pd.DataFrame): Dataset containing concept_id and concept_name.
-        relationship_type (str): Relationship type to filter, either "ancestor" (parent -> child) or "offspring" (child -> parent).
-
+        concept_ancestor_filtered (pd.DataFrame): Filtered concept_ancestor table that you want to use to generate positive samples.
+        concept (pd.DataFrame): Concept table to provide concept names.
     Returns:
-        pd.DataFrame: Relationship dataset with concept names and separation levels.
+        pd.DataFrame: Positive samples dataset with at least
+        ["sentence1", "sentence2","label"].
     """
-    if relationship_type not in ["ancestor", "offspring"]:
-        raise ValueError("relationship_type must be either 'ancestor' (parent -> child) or 'offspring' (child -> parent).")
+    positive_dataset = concept_ancestor_filtered.copy()
+    concept_name_df = concept[['concept_id', 'concept_name', 'domain_id']]
 
-    # extract valid concept IDs
-    valid_concept_ids = set(filtered_concept_id_name_df["concept_id"])
+    ## attach the ancestor and descendant concept names
+    positive_dataset = positive_dataset.merge(
+        concept_name_df, 
+        left_on="ancestor_concept_id", 
+        right_on="concept_id", 
+        how="left"
+    ).rename(columns={
+        "concept_name": "ancestor_concept_name",
+        "domain_id": "ancestor_domain_id"
+        }).drop(
+            columns=["concept_id"]
+        )
+
+    positive_dataset = positive_dataset.merge(
+        concept_name_df, 
+        left_on="descendant_concept_id", 
+        right_on="concept_id", 
+        how="left"
+    ).rename(columns={
+        "concept_name": "descendant_concept_name",
+        "domain_id": "descendant_domain_id"
+        }).drop(
+            columns=["concept_id"]
+        )
+
+    positive_dataset['sentence1'] = get_sentence_name(positive_dataset['ancestor_domain_id'], positive_dataset['ancestor_concept_name'])
+
+    positive_dataset['sentence2'] = get_sentence_name(positive_dataset['descendant_domain_id'], positive_dataset['descendant_concept_name'])
     
-    relationship_pairs = relation_maps_expanded_pairs[relation_maps_expanded_pairs["type"] == relationship_type]
+    positive_dataset['concept_id1'] = positive_dataset['ancestor_concept_id']
+    positive_dataset['concept_id2'] = positive_dataset['descendant_concept_id']
 
-    # filter relationship_pairs (remove rows where either ID is missing)
-    relationship_pairs = relationship_pairs[
-        (relationship_pairs["from_concept_id"].isin(valid_concept_ids)) &
-        (relationship_pairs["to_concept_id"].isin(valid_concept_ids))
-    ].copy()
+    positive_dataset['label'] = 1
+
+    len(positive_dataset) # 2819798
     
-
-    # merge to get concept names based on relationship type
-    if relationship_type == "ancestor":
-        relationship_pairs = relationship_pairs.merge(
-            filtered_concept_id_name_df, left_on="from_concept_id", right_on="concept_id", how="left"
-        ).rename(columns={"concept_name": "parent_name", "from_concept_id": "parent_id"}).drop(columns=["concept_id"])
-
-        relationship_pairs = relationship_pairs.merge(
-            filtered_concept_id_name_df, left_on="to_concept_id", right_on="concept_id", how="left"
-        ).rename(columns={"concept_name": "child_name", "to_concept_id": "child_id"}).drop(columns=["concept_id"])
-
-    elif relationship_type == "offspring":
-        relationship_pairs = relationship_pairs.merge(
-            filtered_concept_id_name_df, left_on="to_concept_id", right_on="concept_id", how="left"
-        ).rename(columns={"concept_name": "parent_name", "to_concept_id": "parent_id"}).drop(columns=["concept_id"])
-
-        relationship_pairs = relationship_pairs.merge(
-            filtered_concept_id_name_df, left_on="from_concept_id", right_on="concept_id", how="left"
-        ).rename(columns={"concept_name": "child_name", "from_concept_id": "child_id"}).drop(columns=["concept_id"])
-        
-    relationship_pairs["direction"] = "parent_to_child" if relationship_type == "ancestor" else "child_to_parent"
-
-    final_samples = relationship_pairs[[
-        "parent_name", "child_name", "parent_id", "child_id", 
-        "min_levels_of_separation", "max_levels_of_separation", "direction"
-    ]]
-
-    return final_samples
+    return positive_dataset
 
 
-def generate_negative_parent_child_samples(
-    positive_parent_child: pd.DataFrame,
-    relation_maps_expanded_pairs: pd.DataFrame,
-    all_concept_ids: pd.DataFrame,
-    relationship_type: str = "ancestor",
+def generate_relation_negative_samples(
+    positive_dataset_relation: pd.DataFrame,
+    concept_ancestor_filtered: pd.DataFrame,
+    concept: pd.DataFrame,
     n_neg: int = 4,
     seed: int = 42
 ) -> pd.DataFrame:
     """
-    Generate negative samples for parent-child or child-parent relationships efficiently.
-    Parent->child (ancestor) -> selected children is not a actual children of the parent 
-    Output format: parent_name -> child_name
-    Child -> Parent (offspring) -> selected parent is not a actual parent of the child 
-    Output format: child_name -> parent_name 
-
+    Generate negative samples for ancestor-descendant relationships.
+    
     Args:
-        positive_parent_child (pd.DataFrame): Positive samples containing ["parent_id", "child_id", "parent_name", "child_name"].
-        relation_maps_expanded_pairs (pd.DataFrame): Exploded relation_maps dataset.
-        all_concept_ids (pd.DataFrame): Dataset containing ["concept_id", "concept_name"].
-        relationship_type (str): Either "ancestor" (parent -> child) or "offspring" (child -> parent).
-        n_neg (int): Number of negative samples per parent-child pair.
-        seed (int): Random seed for reproducibility.
-
-    Returns:
-        pd.DataFrame: Negative samples dataset with ["parent_name", "child_name", "parent_id", "child_id", "label", "source"].
+        positive_dataset_relation (pd.DataFrame): Positive samples dataset.
+        concept_ancestor_filtered (pd.DataFrame): Filtered concept_ancestor table.
+        concept (pd.DataFrame): Concept table to provide concept names.
+        n_neg (int): Number of negative samples to generate per positive sample row.
+        seed (int): Random seed for reproducible sampling.
     """
-    if relationship_type not in ["ancestor", "offspring"]:
-        raise ValueError("relationship_type must be either 'ancestor' (parent -> child) or 'offspring' (child -> parent).")
-
     random.seed(seed)
+    ## all candidate concepts
+    candidate_ids = set(concept_ancestor_filtered['descendant_concept_id'].unique()) | set(concept_ancestor_filtered['ancestor_concept_id'].unique())
+    candidate_ids = list(candidate_ids)
 
-    # create valid relationship mappings based on relationship type
-    if relationship_type == "ancestor":
-        relation_maps = relation_maps_expanded_pairs[['parent_id', 'child_id']].copy()
-        relation_maps = relation_maps.groupby('parent_id').agg({'child_id': set})
-        parent_to_children = relation_maps['child_id'].to_dict()
-    else:  # relationship_type == "offspring"
-        relation_maps = relation_maps_expanded_pairs[['child_id', 'parent_id']].copy()
-        relation_maps = relation_maps.groupby('child_id').agg({'parent_id': set})
-        child_to_parents = relation_maps['parent_id'].to_dict()
+    ## duplicate negative_dataset_relation n_reg + 2 times
+    negative_dataset_candidate = positive_dataset_relation[['sentence1', 'concept_id1']].copy()
+    ## randomly sample negative samples from candidate_ids
+    negative_dataset_candidate['concept_id2'] = negative_dataset_candidate['concept_id1'].apply(lambda x: random.sample(candidate_ids, n_neg + 2))
 
-    # get all valid concept IDs once
-    all_std_ids = list(all_concept_ids["concept_id"])
-    all_std_ids_set = set(all_std_ids)
+    negative_dataset_candidate = negative_dataset_candidate.explode('concept_id2')
 
-    negative_samples = positive_parent_child.copy()
+    ## remove those whose concept_id1 = concept_id2
+    negative_dataset_candidate = negative_dataset_candidate[negative_dataset_candidate['concept_id1'] != negative_dataset_candidate['concept_id2']]
+
+    ## create a black list of parent/child relationship
+    black_list = concept_ancestor_filtered[["ancestor_concept_id", "descendant_concept_id"]].copy()
+    black_list['hit'] = 1
+
+    negative_dataset_candidate = negative_dataset_candidate.merge(
+        black_list,
+        left_on=['concept_id1', 'concept_id2'],
+        right_on=['ancestor_concept_id', 'descendant_concept_id'],
+        how='left'
+    ).merge(
+        black_list,
+        left_on=['concept_id2', 'concept_id1'],
+        right_on=['ancestor_concept_id', 'descendant_concept_id'],
+        how='left'
+    )
+
+    ## remove those in the black list
+    negative_dataset_candidate = negative_dataset_candidate[negative_dataset_candidate['hit_x'].isna()&negative_dataset_candidate['hit_y'].isna()]
+
+    negative_dataset_relation = negative_dataset_candidate[['sentence1', 'concept_id1', 'concept_id2']][:len(positive_dataset_relation) * n_neg]
+
+    ## add sentence2 and label
+    negative_dataset_relation = negative_dataset_relation.merge(
+        concept[['concept_id', 'concept_name', 'domain_id']],
+        left_on='concept_id2',
+        right_on='concept_id',
+        how='left'
+    )
+
+    negative_dataset_relation['sentence2'] = get_sentence_name(negative_dataset_relation['domain_id'], negative_dataset_relation['concept_name'])
+
+    negative_dataset_relation['label'] = 0
+
+    negative_dataset_relation = negative_dataset_relation[['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']]
     
-    all_parent_ids = []
-    all_parent_names = []
-    all_child_ids = []
-    all_child_names = []
-    
-    # process each parent/child 
-    for _, row in tqdm(negative_samples.iterrows(), total=len(negative_samples)):
-        if relationship_type == "ancestor":
-            parent_id = row["parent_id"]
-            parent_name = row["parent_name"]
-            exclude_ids = parent_to_children.get(parent_id, set())
+    return negative_dataset_relation
 
-            # Generate negative child candidates
-            choices = random.sample(all_std_ids, 2 * n_neg)
-            choices_filtered = list(set(choices) - exclude_ids)
 
-        else:  # relationship_type == "offspring"
-            child_id = row["child_id"]
-            child_name = row["child_name"]
-            exclude_ids = child_to_parents.get(child_id, set())
-
-            # Generate negative parent candidates
-            choices = random.sample(all_std_ids, 2 * n_neg)
-            choices_filtered = list(set(choices) - exclude_ids)
-
-        # get n_neg negative samples
-        if len(choices_filtered) < n_neg:
-            candidate_ids = list(all_std_ids_set - exclude_ids - set(choices_filtered))
-            n_more_needed = n_neg - len(choices_filtered)
-            if candidate_ids:
-                n_more_needed = min(n_more_needed, len(candidate_ids))
-                choices_filtered.extend(random.sample(candidate_ids, n_more_needed))
-
-        final_choices = choices_filtered[:n_neg]
-
-        # Extend results based on relationship type
-        if relationship_type == "ancestor":
-            all_parent_ids.extend([parent_id] * len(final_choices))
-            all_parent_names.extend([parent_name] * len(final_choices))
-            all_child_ids.extend(final_choices)
-        else:  # relationship_type == "offspring"
-            all_child_ids.extend([child_id] * len(final_choices))
-            all_child_names.extend([child_name] * len(final_choices))
-            all_parent_ids.extend(final_choices)
-
-    # create final DataFrame all at once
-    concept_id_to_name = all_concept_ids.set_index("concept_id")["concept_name"].to_dict()
-
-    if relationship_type == "ancestor":
-        all_child_names = [concept_id_to_name.get(cid, "Unknown") for cid in all_child_ids]
-    else:  # relationship_type == "offspring"
-        all_parent_names = [concept_id_to_name.get(pid, "Unknown") for pid in all_parent_ids]
-
-    direction_label = "parent_to_child" if relationship_type == "ancestor" else "child_to_parent"
-
-    final_df = pd.DataFrame({
-        'parent_id': all_parent_ids,
-        'parent_name': all_parent_names,
-        'child_id': all_child_ids,
-        'child_name': all_child_names,
-        'direction': direction_label,
-        'label': 0,  
-        'source': 'negative'
-    })
-    return final_df[[
-        "parent_name", "child_name", "parent_id", "child_id", "direction", "label", "source"
-    ]]
+def add_special_token(df, token):
+    df['sentence1'] = token + " " + df['sentence1']
+    df['sentence2'] = token + " " + df['sentence2']
+    return df
