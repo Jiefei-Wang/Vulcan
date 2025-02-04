@@ -5,31 +5,31 @@ from chromadb.utils import embedding_functions
 
 
 class ChromaVecDB():
-    doc_name = "documents"
+    name = "documents"
     
-    def __init__(self, model, path = None, metadata={"hnsw:space": "cosine"}, doc_name = "documents"):
+    def __init__(self, model, path = None, metadata={"hnsw:space": "cosine"}, name = "documents"):
         if path==None:
             self.client = chromadb.Client()
         else:
             self.client = chromadb.PersistentClient(path)
         self.metadata=metadata
         self.model=model
-        self.doc_name = doc_name
+        self.name = name
         self.get_collection()
     
-    def get_collection(self, doc_name = None):
-        if doc_name == None:
-            doc_name = self.doc_name
+    def get_collection(self, name = None):
+        if name == None:
+            name = self.name
         return self.client.get_or_create_collection(
-            self.doc_name,
+            name,
             metadata=self.metadata
             )
     
-    def empty_collection(self, doc_name = None):
-        if doc_name == None:
-            doc_name = self.doc_name
+    def empty_collection(self, name = None):
+        if name == None:
+            name = self.name
         try:
-            self.client.delete_collection(self.doc_name)
+            self.client.delete_collection(name)
             self.get_collection()
         except ValueError:
             pass
@@ -76,9 +76,9 @@ class ChromaVecDB():
         )
     
     def set_doc_name(self, doc_name):
-        self.doc_name = doc_name
+        self.name = doc_name
     
     def get_doc_name(self):
-        return self.doc_name
+        return self.name
         
         

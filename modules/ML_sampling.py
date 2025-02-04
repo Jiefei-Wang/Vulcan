@@ -401,7 +401,12 @@ def generate_relation_negative_samples(
     return negative_dataset_relation
 
 
-def add_special_token(df, token):
-    df['sentence1'] = token + " " + df['sentence1']
-    df['sentence2'] = token + " " + df['sentence2']
+def add_special_token(vec, token):
+    vec = token + " " + vec
+    return vec
+
+
+def add_special_token_df(df, token):
+    df['sentence1'] = add_special_token(df['sentence1'], token)
+    df['sentence2'] = add_special_token(df['sentence2'], token)
     return df

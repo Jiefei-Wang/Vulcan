@@ -12,25 +12,49 @@ from datasets import Dataset, DatasetDict, concatenate_datasets
 ## make sure cuda is available
 torch.cuda.is_available()
 
-dataset_dict = DatasetDict.load_from_disk('data/train_dataset_dict')
 
-## combine matching and relation
-dataset_matching = dataset_dict['matching']
-dataset_relation = dataset_dict['relation']
+model_name = 'models/all-MiniLM-L6-v2'
+# model_name = 'models/base_exclude_CIEL/checkpoint-65000'
+output_dir = "models/base_exclude_CIEL2"
 
-dataset = concatenate_datasets([dataset_matching, dataset_relation])
+ds_names = ['matching', 'relation']
 
-subset = dataset.select(range(1024*8))
+matching_all = pd.read_feather('data/ML/conceptML_matching.feather')
+relation_all = pd.read_feather('data/ML/conceptML_relation.feather')
+dataset_matching = Dataset.from_pandas(matching_all)
+dataset_relation = Dataset.from_pandas(relation_all)
 
-np.sum(subset['label'])
-
-## trainint and testing split
-dt = subset.train_test_split(test_size=0.005, seed=42)
-train_dataset = dt['train']
-test_dataset = dt['test']
+print(dataset_matching)
+print(dataset_relation)
 
 
-model = SentenceTransformer('models/all-MiniLM-L6-v2')
+## train test split
+dataset_matching_split = dataset_matching.train_test_split(test_size=0.0005, seed=42)
+dataset_relation_split = dataset_relation.train_test_split(test_size=0.0001, seed=42)
+
+dataset_matching_train = dataset_matching_split['train']
+dataset_matching_test = dataset_matching_split['test']
+dataset_relation_train = dataset_relation_split['train']
+dataset_relation_test = dataset_relation_split['test']
+
+
+train_dataset = {
+    'matching': dataset_matching_train,
+    'relation': dataset_relation_train
+}
+train_dataset = {k: train_dataset[k] for k in ds_names}
+test_dataset = {
+    'matching': dataset_matching_test,
+    'relation': dataset_relation_test
+}
+test_dataset = {k: test_dataset[k] for k in ds_names}
+
+print(train_dataset)
+print(test_dataset)
+
+
+
+model = SentenceTransformer(model_name)
 
 ## add special tokens
 transformer = model[0]  
@@ -46,32 +70,45 @@ num_added_tokens = tokenizer.add_special_tokens(special_tokens_dict)
 # Resize the model embeddings if we added tokens
 if num_added_tokens > 0:
     auto_model.resize_token_embeddings(len(tokenizer))
+    
 
+from sentence_transformers.evaluation import BinaryClassificationEvaluator
 
+dataset_matching_test.reset_format()
+# Initialize the evaluator
+dev_evaluator1 = BinaryClassificationEvaluator(
+    sentences1=dataset_matching_test["sentence1"],
+    sentences2=dataset_matching_test["sentence2"],
+    labels=dataset_matching_test["label"],
+    name="evaluation1",
+)
+dev_evaluator1(model)
 
-train_loss = losses.ContrastiveLoss(model=model)
-
-output_dir = "models/fine-tuned2"
+train_loss = {
+    'matching' : losses.ContrastiveLoss(model=model),
+    'relation' : losses.ContrastiveLoss(model=model)
+}
+train_loss = {k: train_loss[k] for k in ds_names}
 
 args = SentenceTransformerTrainingArguments(
     # Required parameter:
     output_dir=output_dir,
     # Optional training parameters:
-    num_train_epochs=10,
-    per_device_train_batch_size=64,
-    per_device_eval_batch_size=64,
+    num_train_epochs=5,
+    per_device_train_batch_size=256,
+    per_device_eval_batch_size=256,
     warmup_ratio=0.1,
     fp16=True,  # Set to False if your GPU can't handle FP16
     bf16=False,  # Set to True if your GPU supports BF16
     # batch_sampler=BatchSamplers.NO_DUPLICATES,  # Losses using "in-batch negatives" benefit from no duplicates
     # Optional tracking/debugging parameters:
     eval_strategy="steps",
-    eval_steps=100,
+    eval_steps=500,
     save_strategy="steps",
-    save_steps=1000,
+    save_steps=10000,
     save_total_limit=2,
-    logging_steps=100,
-    run_name="mpnet-base-all-nli-triplet",  # Used in W&B if `wandb` is installed
+    logging_steps=500,
+    run_name=output_dir,  # Used in W&B if `wandb` is installed
 )
 
 trainer = SentenceTransformerTrainer(
@@ -80,8 +117,11 @@ trainer = SentenceTransformerTrainer(
     eval_dataset=test_dataset,
     loss=train_loss,
     args=args,
+    evaluator=dev_evaluator1,
 )
+
+
 trainer.train()
 
-## save the model
+
 model.save(f"{output_dir}/final")

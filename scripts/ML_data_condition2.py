@@ -21,7 +21,7 @@
 
 import pandas as pd
 from datasets import Dataset, DatasetDict
-from modules.ML_sampling import generate_matching_positive_samples, generate_matching_negative_samples, get_filtered_concept_ancestor, generate_relation_positive_samples, generate_relation_negative_samples,get_sentence_name, add_special_token
+from modules.ML_sampling import generate_matching_positive_samples, generate_matching_negative_samples, get_filtered_concept_ancestor, generate_relation_positive_samples, generate_relation_negative_samples,get_sentence_name, add_special_token_df
 
 # Precise mapping, sentence1 maps to sentence 2
 
@@ -37,6 +37,7 @@ std_target = conceptML[conceptML['domain_id'] == 'Condition'].reset_index(drop=T
 std_target['std_name'] = get_sentence_name(std_target['domain_id'], std_target['concept_name'])
 print(len(std_target))   # 160288
 print(std_target.columns)
+
 
 target_standard_ids = std_target['concept_id']
 ## Filter concept_ancestor to only include the target standard concepts
@@ -167,42 +168,59 @@ negative_dataset_relation.to_feather('data/ML/conceptML_negative_relation.feathe
 
 
 
-
-## create training dataset
+##################
+## Prepare training and validation dataset
+##################
 positive_dataset_matching = pd.read_feather('data/ML/conceptML_positive_matching.feather')
 negative_dataset_matching = pd.read_feather('data/ML/conceptML_negative_matching.feather')
 positive_dataset_relation = pd.read_feather('data/ML/conceptML_positive_relation.feather')
 negative_dataset_relation = pd.read_feather('data/ML/conceptML_negative_relation.feather')
 
-positive_matching = add_special_token(positive_dataset_matching, '[MATCHING]')
-negative_matching = add_special_token(negative_dataset_matching, '[MATCHING]')
-positive_relation = add_special_token(positive_dataset_relation, '[RELATION]')
-negative_relation = add_special_token(negative_dataset_relation, '[RELATION]')
+positive_matching = add_special_token_df(positive_dataset_matching, '[MATCHING]')
+negative_matching = add_special_token_df(negative_dataset_matching, '[MATCHING]')
+positive_relation = add_special_token_df(positive_dataset_relation, '[RELATION]')
+negative_relation = add_special_token_df(negative_dataset_relation, '[RELATION]')
 
-column_keep = ['sentence1', 'sentence2', 'label']
 
 matching_all = pd.concat(
     [positive_matching, negative_matching]
-    ).reset_index(drop=True)[column_keep]
+    ).reset_index(drop=True)
 
 relation_all = pd.concat(
     [positive_relation, negative_relation]
-    ).reset_index(drop=True)[column_keep]
+    ).reset_index(drop=True)
 
+column_keep = ['sentence1', 'sentence2', 'label']
 ## Check for missing values
-matching_all[matching_all.isnull().any(axis=1)]
-relation_all[relation_all.isnull().any(axis=1)]
+matching_all[matching_all[column_keep].isnull().any(axis=1)]
+relation_all[relation_all[column_keep].isnull().any(axis=1)]
 
 
-## pandas dataframe to datasets
-dataset_matching = Dataset.from_pandas(matching_all).shuffle(seed=42)
-dataset_relation = Dataset.from_pandas(relation_all).shuffle(seed=42)
+print(len(matching_all)) # 3531780
+print(len(relation_all)) # 14684495
 
-## create dataset dict
-dataset_dict = DatasetDict({
-    'matching': dataset_matching,
-    'relation': dataset_relation
-})
+##################
+## Validation dataset
+##################
+reserved_vocab = "CIEL"
+reserved_concepts = concept[(concept.domain_id=="Condition")&(concept.vocabulary_id == reserved_vocab)]
+print(len(reserved_concepts)) # 38818
+reserved_concept_ids = set(reserved_concepts.concept_id.to_list())
 
-## save dataset dict
-dataset_dict.save_to_disk('data/train_dataset_dict')
+## filter out reserved vocab from column concept_id1 and concept_id2
+def filter_out_reserved(df, reserved_ids):
+    return df[(~df.concept_id1.isin(reserved_ids)) & (~df.concept_id2.isin(reserved_ids))]
+
+matching_filtered = filter_out_reserved(matching_all, reserved_concept_ids)
+relation_filtered = filter_out_reserved(relation_all, reserved_concepts.concept_id)
+
+## reorder rows
+matching_filtered = matching_filtered.sample(frac=1, random_state=42).reset_index(drop=True)
+relation_filtered = relation_filtered.sample(frac=1, random_state=42).reset_index(drop=True)
+
+print(len(matching_filtered)) # 3500986
+print(len(relation_filtered)) # 14684495
+
+matching_filtered[column_keep].to_feather('data/ML/conceptML_matching.feather')
+relation_filtered[column_keep].to_feather('data/ML/conceptML_relation.feather')
+

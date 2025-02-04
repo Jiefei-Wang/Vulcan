@@ -36,6 +36,52 @@ mrdef_df = read_mrdef(umls_def_path) # Reads UMLS concept definitions
 
 # Extract standard concept names and descriptions
 std_concept = concept[concept['standard_concept'] == 'S']
+nonstd_concept = concept[concept['standard_concept'] != 'S']
+
+
+std_conditions = std_concept[std_concept.domain_id == 'Condition']
+std_conditions.groupby('vocabulary_id')['concept_id'].count()
+"""
+HCPCS                    1
+ICDO3                56858
+Nebraska Lexicon      1274
+OMOP Extension         341
+OPCS4                    1
+SNOMED               98720
+SNOMED Veterinary     3093
+"""
+
+nonstd_conditions = nonstd_concept[nonstd_concept.domain_id == 'Condition']
+nonstd_conditions.groupby('vocabulary_id')['concept_id'].count()
+"""
+CDISC                   455
+CIEL                  38818
+CIM10                 13885
+CO-CONNECT               16
+Cohort                   66
+HemOnc                  260
+ICD10                 14113
+ICD10CM               88510
+ICD10CN               30588
+ICD10GM               15952
+ICD9CM                14929
+ICDO3                  5677
+KCD7                  19705
+MeSH                  12343
+Nebraska Lexicon     150062
+OMOP Extension            8
+OPCS4                     5
+OXMIS                  5704
+OncoTree                885
+PPI                      74
+Read                  47836
+SMQ                     324
+SNOMED                58172
+SNOMED Veterinary       144
+"""
+
+# nonstd_concept[nonstd_concept['vocabulary_id'] == 'CIEL'].concept_name
+
 
 # Extract a mapping of standard concepts to non-standard names
 nonstd_names = extract_nonstd_names(concept, concept_relationship) 

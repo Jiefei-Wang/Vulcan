@@ -171,3 +171,5 @@ tmp_trainer
 .DS_Store
 
 tmp
+
+wandb/*
