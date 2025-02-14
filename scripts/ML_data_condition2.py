@@ -7,10 +7,9 @@
 # - For each non-standard condition, sample n_neg(=4) negative samples
 #
 # Output: pd.DataFrame, 
-# columns=['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label', 'source']
+# columns=['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']
 # sentence1: standard concept name
 # sentence2: non-standard concept name, synonym, or description
-# source: The source of sentence2 (if available)
 # concept_id1: concept_id of sentence1
 # concept_id2: concept_id of sentence2 (if available)
 #
@@ -19,8 +18,18 @@
 # For parent-child relationship:
 #   - label = 1 if sentence1 has relationship with sentence2, 0 otherwise
 
+
+# Two Iterable Dataset
+# 1. Matching dataset
+# 2. Relation dataset
+# 
+# Measure time consumption for each dataset
+# Target: less than 10 minutes
+#
+# Iterable Class: params: Number of negative samples
+# 
+
 import pandas as pd
-from datasets import Dataset, DatasetDict
 from modules.ML_sampling import generate_matching_positive_samples, generate_matching_negative_samples, get_filtered_concept_ancestor, generate_relation_positive_samples, generate_relation_negative_samples,get_sentence_name, add_special_token_df
 
 # Precise mapping, sentence1 maps to sentence 2
@@ -224,3 +233,12 @@ print(len(relation_filtered)) # 14684495
 matching_filtered[column_keep].to_feather('data/ML/conceptML_matching.feather')
 relation_filtered[column_keep].to_feather('data/ML/conceptML_relation.feather')
 
+## make validation dataset
+def filter_in_reserved(df, reserved_ids):
+    return df[(df.concept_id1.isin(reserved_ids)) | (df.concept_id2.isin(reserved_ids))]
+
+matching_validation = filter_in_reserved(matching_all, reserved_concept_ids)
+
+print(len(matching_validation)) # 30794
+
+matching_validation[column_keep].to_feather('data/ML/conceptML_matching_validation.feather')

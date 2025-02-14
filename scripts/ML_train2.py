@@ -19,33 +19,40 @@ output_dir = "models/base_exclude_CIEL2"
 
 ds_names = ['matching', 'relation']
 
+conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
 matching_all = pd.read_feather('data/ML/conceptML_matching.feather')
 relation_all = pd.read_feather('data/ML/conceptML_relation.feather')
+matching_validation = pd.read_feather('data/ML/conceptML_matching_validation.feather')
+
+matching_validation_sub = matching_validation.sample(frac=0.1, random_state=42)
 dataset_matching = Dataset.from_pandas(matching_all)
 dataset_relation = Dataset.from_pandas(relation_all)
 
 print(dataset_matching)
 print(dataset_relation)
 
+## empty dataset
+relation_validation = Dataset.from_dict(dataset_relation[:0])
+
 
 ## train test split
-dataset_matching_split = dataset_matching.train_test_split(test_size=0.0005, seed=42)
-dataset_relation_split = dataset_relation.train_test_split(test_size=0.0001, seed=42)
+# dataset_matching_split = dataset_matching.train_test_split(test_size=0.0005, seed=42)
+# dataset_relation_split = dataset_relation.train_test_split(test_size=0.0001, seed=42)
 
-dataset_matching_train = dataset_matching_split['train']
-dataset_matching_test = dataset_matching_split['test']
-dataset_relation_train = dataset_relation_split['train']
-dataset_relation_test = dataset_relation_split['test']
+# dataset_matching_train = dataset_matching_split['train']
+# dataset_matching_test = dataset_matching_split['test']
+# dataset_relation_train = dataset_relation_split['train']
+# dataset_relation_test = dataset_relation_split['test']
 
 
 train_dataset = {
-    'matching': dataset_matching_train,
-    'relation': dataset_relation_train
+    'matching': dataset_matching,
+    'relation': dataset_relation
 }
 train_dataset = {k: train_dataset[k] for k in ds_names}
 test_dataset = {
-    'matching': dataset_matching_test,
-    'relation': dataset_relation_test
+    'matching': matching_validation_sub,
+    'relation': relation_validation
 }
 test_dataset = {k: test_dataset[k] for k in ds_names}
 
@@ -74,12 +81,12 @@ if num_added_tokens > 0:
 
 from sentence_transformers.evaluation import BinaryClassificationEvaluator
 
-dataset_matching_test.reset_format()
+matching_validation_sub.reset_format()
 # Initialize the evaluator
 dev_evaluator1 = BinaryClassificationEvaluator(
-    sentences1=dataset_matching_test["sentence1"],
-    sentences2=dataset_matching_test["sentence2"],
-    labels=dataset_matching_test["label"],
+    sentences1=matching_validation_sub["sentence1"],
+    sentences2=matching_validation_sub["sentence2"],
+    labels=matching_validation_sub["label"],
     name="evaluation1",
 )
 dev_evaluator1(model)
@@ -103,7 +110,7 @@ args = SentenceTransformerTrainingArguments(
     # batch_sampler=BatchSamplers.NO_DUPLICATES,  # Losses using "in-batch negatives" benefit from no duplicates
     # Optional tracking/debugging parameters:
     eval_strategy="steps",
-    eval_steps=500,
+    eval_steps=1000,
     save_strategy="steps",
     save_steps=10000,
     save_total_limit=2,

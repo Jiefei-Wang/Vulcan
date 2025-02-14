@@ -5,6 +5,7 @@ from modules.ChromaVecDB import ChromaVecDB
 from modules.performance import map_concepts, performance_metrics
 import tempfile
 from modules.ML_sampling import add_special_token
+import json
 
 # Read dataset
 conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
@@ -84,3 +85,26 @@ for i in range(len(validation_set)):
     
 
 result
+
+
+print(json.dumps(result, indent=2))
+# [
+#   {
+#     "1": 0.7462664757284391,
+#     "10": 0.823830259812374,
+#     "50": 0.8491393167139142,
+#     "model": "models/all-MiniLM-L6-v2"
+#   },
+#   {
+#     "1": 0.7605283923196072,
+#     "10": 0.8459537656720344,
+#     "50": 0.8736592921647135,
+#     "model": "models/base_no_relation/final"
+#   },
+#   {
+#     "1": 0.74848759388608,
+#     "10": 0.8339129672385072,
+#     "50": 0.8666452348247947,
+#     "model": "models/base_exclude_CIEL/final"
+#   }
+# ]
