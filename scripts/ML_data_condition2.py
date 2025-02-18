@@ -20,8 +20,8 @@
 
 
 # Two Iterable Dataset
-# 1. Matching dataset
-# 2. Relation dataset
+# 1. Matching dataset precise matching (label 0)
+# 2. Relation dataset parent-child relationship (label 1)
 # 
 # Measure time consumption for each dataset
 # Target: less than 10 minutes
@@ -30,7 +30,15 @@
 # 
 
 import pandas as pd
-from modules.ML_sampling import generate_matching_positive_samples, generate_matching_negative_samples, get_filtered_concept_ancestor, generate_relation_positive_samples, generate_relation_negative_samples,get_sentence_name, add_special_token_df
+from modules.ML_sampling import generate_matching_positive_samples, get_filtered_concept_ancestor, generate_relation_positive_samples, generate_relation_negative_samples,\
+    get_sentence_name, add_special_token_df, MatchingNegativeIterableDataset, RelationNegativeIterableDataset
+from datasets import Dataset
+import pyarrow.feather as feather
+
+# relaod kernel to get the latest version of the modules
+import importlib
+import modules.ML_sampling
+importlib.reload(modules.ML_sampling)
 
 # Precise mapping, sentence1 maps to sentence 2
 
@@ -94,7 +102,7 @@ source                                               nonstd_name
 """
 
 # distribution of source 
-print(positive_dataset_matching['source'].value_counts(normalize=True))
+print(positive_dataset_matching['source'].value_counts())
 """
 do we need to make the positive samples balanced?
 nonstd_name     0.667803
@@ -102,6 +110,7 @@ synonym_name    0.246849
 descriptions    0.085348
 """
 
+print(positive_dataset_matching.iloc[0])
 
 # negative sampling strategy:
 # For each row in positive_sample_dataset
@@ -110,13 +119,36 @@ descriptions    0.085348
 # not in the parent/child list of the positive sample
 
 n_neg = 4
-negative_dataset_matching = generate_matching_negative_samples(
-    positive_dataset_matching = positive_dataset_matching,
-    concept_ancestor = concept_ancestor,
-    std_target_for_matching = std_target_for_matching,
-    n_neg = n_neg,
-    seed = 42
+# original method 
+# negative_dataset_matching = generate_matching_negative_samples(
+#     positive_dataset_matching = positive_dataset_matching,
+#     concept_ancestor = concept_ancestor,
+#     std_target_for_matching = std_target_for_matching,
+#     n_neg = n_neg,
+#     seed = 42
+# )
+
+# iterable method
+negative_dataset_matching = MatchingNegativeIterableDataset(
+    positive_dataset_matching,
+    concept_ancestor,
+    std_target_for_matching,
+    n_neg=40,  
+    seed=42
 )
+
+type(negative_dataset_matching)
+# <class 'modules.ML_sampling.MatchingNegativeIterableDataset'>
+first_sample = next(iter(negative_dataset_matching))  # Get the first sample
+print(first_sample)
+#{'sentence1': '[MATCHING] Condition: Neoplasm, benign of hematopoietic system, NOS', 
+# 'sentence2': '[MATCHING] Primary squamous cell carcinoma of vermilion border of lip (disorder)',
+# 'concept_id1': 751726, 'concept_id2': 37018880, 'label': 0, 'source': 'matching_negative'}
+
+print("Column Names:", first_sample.keys()) 
+# Column Names: dict_keys(['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label', 'source'])
+
+
 
 len(negative_dataset_matching) # 2825424
 print(negative_dataset_matching.columns) # ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label', 'source']
@@ -144,6 +176,7 @@ positive_dataset_relation = positive_dataset_relation[['sentence1',
 positive_dataset_relation.columns
 len(positive_dataset_relation) # 2819798
 
+
 print(positive_dataset_relation.iloc[0])
 """
 sentence1                         Condition: Lesion of genitalia
@@ -154,12 +187,28 @@ label                                                          1
 """
 
 ## negative samples
-negative_dataset_relation = generate_relation_negative_samples(positive_dataset_relation, concept_ancestor_filtered, concept, n_neg=4)
+# negative_dataset_relation = generate_relation_negative_samples(positive_dataset_relation, concept_ancestor_filtered, concept, n_neg=4)
+negative_dataset_relation = RelationNegativeIterableDataset(
+    positive_dataset_relation,  
+    concept_ancestor_filtered,
+    concept,
+    n_neg=40,  
+    seed=42
+)
+row_count = sum(1 for _ in negative_dataset_relation)
+print("Total rows in negative_dataset_relation:", row_count)
+
+type(negative_dataset_relation)
+# <class 'modules.ML_sampling.MatchingNegativeIterableDataset'>
+first_sample_rel = next(iter(negative_dataset_relation))  # Get the first sample
+print(first_sample_rel)
+# {'sentence1': '[RELATION] Condition: Lesion of genitalia', 
+# 'sentence2': '[RELATION] Measurement: Surgical margin involved by tumor', 
+# 'concept_id1': 37110208, 'concept_id2': 4184217, 'label': 0, 'source': 'relation_negative'}
 
 len(negative_dataset_relation) # 11279192
 
 
-negative_dataset_relation.iloc[0]
 '''
 sentence1              Condition: Lesion of genitalia
 sentence2      Observation: Suprapatellar jerk absent
@@ -186,10 +235,11 @@ positive_dataset_relation = pd.read_feather('data/ML/conceptML_positive_relation
 negative_dataset_relation = pd.read_feather('data/ML/conceptML_negative_relation.feather')
 
 positive_matching = add_special_token_df(positive_dataset_matching, '[MATCHING]')
+# can be deleted, iterable dataset already add special token
 negative_matching = add_special_token_df(negative_dataset_matching, '[MATCHING]')
 positive_relation = add_special_token_df(positive_dataset_relation, '[RELATION]')
+# can be deleted, iterable dataset already add special token
 negative_relation = add_special_token_df(negative_dataset_relation, '[RELATION]')
-
 
 matching_all = pd.concat(
     [positive_matching, negative_matching]
@@ -242,3 +292,37 @@ matching_validation = filter_in_reserved(matching_all, reserved_concept_ids)
 print(len(matching_validation)) # 30794
 
 matching_validation[column_keep].to_feather('data/ML/conceptML_matching_validation.feather')
+
+
+
+
+# try to save the dataset to feather file
+
+def save_iterable_dataset_to_feather(dataset, output_file, batch_size=10000):
+    """
+    Efficiently save an IterableDataset to a Feather file in batches.
+
+    Args:
+        dataset (IterableDataset): The PyTorch IterableDataset to save.
+        output_file (str): Path to save the Feather file.
+        batch_size (int): Number of rows per batch before writing to disk.
+    """
+    batch = []
+    
+    for i, sample in enumerate(dataset):
+        batch.append(sample)
+
+        # When batch reaches `batch_size`, write to Feather
+        if len(batch) >= batch_size:
+            df = pd.DataFrame(batch)
+            feather.write_feather(df, output_file, compression='zstd')  # Efficient compression
+            batch = []  # Reset batch
+
+    # Save the final batch
+    if batch:
+        df = pd.DataFrame(batch)
+        feather.write_feather(df, output_file, compression='zstd')
+
+# Example Usage
+output_path = "negative_samples.feather"
+save_iterable_dataset_to_feather(negative_dataset, output_path)
