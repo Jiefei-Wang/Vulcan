@@ -30,10 +30,17 @@
 # 
 
 import pandas as pd
-from modules.ML_sampling import generate_matching_positive_samples, get_filtered_concept_ancestor, generate_relation_positive_samples, generate_relation_negative_samples,\
-    get_sentence_name, add_special_token_df, MatchingNegativeIterableDataset, RelationNegativeIterableDataset
+from modules.ML_sampling import generate_matching_positive_samples, get_filtered_concept_ancestor, \
+    generate_relation_positive_samples, get_sentence_name, add_special_token_df, \
+    MatchingNegativeIterableDataset, RelationNegativeIterableDataset, FilteredIterableDataset, \
+        ShuffledIterableDataset
+
 from datasets import Dataset
 import pyarrow.feather as feather
+import torch
+import math
+from torch.utils.data import DataLoader
+
 
 # relaod kernel to get the latest version of the modules
 import importlib
@@ -141,9 +148,11 @@ type(negative_dataset_matching)
 # <class 'modules.ML_sampling.MatchingNegativeIterableDataset'>
 first_sample = next(iter(negative_dataset_matching))  # Get the first sample
 print(first_sample)
-#{'sentence1': '[MATCHING] Condition: Neoplasm, benign of hematopoietic system, NOS', 
-# 'sentence2': '[MATCHING] Primary squamous cell carcinoma of vermilion border of lip (disorder)',
-# 'concept_id1': 751726, 'concept_id2': 37018880, 'label': 0, 'source': 'matching_negative'}
+"""
+{'sentence1': '[MATCHING] Condition: Neoplasm, benign of hematopoietic system, NOS', 
+'sentence2': '[MATCHING] Lymphoid Benign (LBGN)', 
+'concept_id1': 751726, 'concept_id2': 777429, 'label': 1, 'source': 'nonstd_name'}
+"""
 
 print("Column Names:", first_sample.keys()) 
 # Column Names: dict_keys(['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label', 'source'])
@@ -168,12 +177,14 @@ source                                         matching_negative
 ## sentence 1: ancestor concept
 ## sentence 2: descendant concept
 ##########################################
+
+# no source in the positve relation dataset, also no source in negative relation dataset
 positive_dataset_relation = generate_relation_positive_samples(concept_ancestor_filtered, concept)
 
 positive_dataset_relation = positive_dataset_relation[['sentence1',
        'sentence2', 'concept_id1', 'concept_id2', 'label']]
 
-positive_dataset_relation.columns
+
 len(positive_dataset_relation) # 2819798
 
 
@@ -195,29 +206,92 @@ negative_dataset_relation = RelationNegativeIterableDataset(
     n_neg=40,  
     seed=42
 )
-row_count = sum(1 for _ in negative_dataset_relation)
-print("Total rows in negative_dataset_relation:", row_count)
+# row_count = sum(1 for _ in negative_dataset_relation)
+# print("Total rows in negative_dataset_relation:", row_count)
 
 type(negative_dataset_relation)
 # <class 'modules.ML_sampling.MatchingNegativeIterableDataset'>
-first_sample_rel = next(iter(negative_dataset_relation))  # Get the first sample
-print(first_sample_rel)
-# {'sentence1': '[RELATION] Condition: Lesion of genitalia', 
-# 'sentence2': '[RELATION] Measurement: Surgical margin involved by tumor', 
-# 'concept_id1': 37110208, 'concept_id2': 4184217, 'label': 0, 'source': 'relation_negative'}
+from itertools import islice
+row_index = 41
+specific_sample = next(islice(negative_dataset_relation, row_index, row_index + 1))
+print(specific_sample)
+"""
+row index 0 
+{'sentence1': '[RELATION] Condition: Lesion of genitalia', 
+'sentence2': '[RELATION] Condition: T-cell large granular lymphocytic leukemia of labium majus', 
+'concept_id1': 37110208, 
+'concept_id2': 36561313, 
+'label': 1}
 
-len(negative_dataset_relation) # 11279192
+row index 40
+{'sentence1': '[RELATION] Condition: Lesion of genitalia', 
+'sentence2': '[RELATION] Condition: Hyperthyroidism due to molar thyrotropin', 
+'concept_id1': 37110208, 
+'concept_id2': 4259138, 
+'label': 0}
+
+row index 41
+{'sentence1': '[RELATION] Condition: Disorder of joint region', 
+'sentence2': '[RELATION] Condition: Nontraumatic rupture of rotator cuff of right shoulder', 
+'concept_id1': 37206233, 
+'concept_id2': 37108659, 
+'label': 1}
+"""
+
+# len(negative_dataset_relation) # 11279192
+
+"""
+After adding positive samples to negative samples, the iterable dataset includes both positive and negative samples. 
+negative_dataset_matching and negative_dataset_relation actually have both positive and negative samples.
+(can change the name of these two iterable datasets)
+"""
 
 
-'''
-sentence1              Condition: Lesion of genitalia
-sentence2      Observation: Suprapatellar jerk absent
-concept_id1                                  37110208
-concept_id2                                   3661505
-label                                               0
-Name: 0, dtype: object
-'''
+"""
+try to save the dataset to feather file, failed!
+"""
+import pandas as pd
+import pyarrow.feather as feather
+from tqdm import tqdm
 
+def save_iterable_dataset_to_feather(dataset, output_file, batch_size=10000):
+    """
+    Efficiently saves an IterableDataset to a Feather file in batches with a progress bar.
+
+    Args:
+        dataset (IterableDataset): The PyTorch IterableDataset to save.
+        output_file (str): Path to save the Feather file.
+        batch_size (int): Number of rows per batch before writing to disk.
+    """
+    batch = []
+    total_saved = 0
+    for i, sample in enumerate(tqdm(dataset, desc="Saving to Feather", unit="rows")):
+        batch.append(sample)
+        if len(batch) >= batch_size:
+            df = pd.DataFrame(batch)
+            feather.write_feather(df, output_file, compression='zstd') 
+            total_saved += len(batch)
+            batch = [] 
+    if batch:
+        df = pd.DataFrame(batch)
+        feather.write_feather(df, output_file, compression='zstd')
+        total_saved += len(batch)
+    print(f"Finished saving {total_saved} rows to {output_file}")
+# slow to save the dataset, very slow 
+output_path = "data/ML/conceptML_relation.feather"
+save_iterable_dataset_to_feather(negative_dataset_relation, output_path)
+# Saving to Feather: 120412859rows [19:01, 105495.76rows/s]
+
+
+# failed to save the dataset, very slow
+output_path = "data/ML/conceptML_matching.feather"
+save_iterable_dataset_to_feather(negative_dataset_matching, output_path)
+
+
+
+##################
+## original method to save the dataset to feather file
+##################
 positive_dataset_matching.to_feather('data/ML/conceptML_positive_matching.feather')
 negative_dataset_matching.to_feather('data/ML/conceptML_negative_matching.feather')
 positive_dataset_relation.to_feather('data/ML/conceptML_positive_relation.feather')
@@ -258,6 +332,7 @@ relation_all[relation_all[column_keep].isnull().any(axis=1)]
 print(len(matching_all)) # 3531780
 print(len(relation_all)) # 14684495
 
+
 ##################
 ## Validation dataset
 ##################
@@ -266,16 +341,71 @@ reserved_concepts = concept[(concept.domain_id=="Condition")&(concept.vocabulary
 print(len(reserved_concepts)) # 38818
 reserved_concept_ids = set(reserved_concepts.concept_id.to_list())
 
-## filter out reserved vocab from column concept_id1 and concept_id2
-def filter_out_reserved(df, reserved_ids):
-    return df[(~df.concept_id1.isin(reserved_ids)) & (~df.concept_id2.isin(reserved_ids))]
+# ## filter out reserved vocab from column concept_id1 and concept_id2
+# def filter_out_reserved(df, reserved_ids):
+#     return df[(~df.concept_id1.isin(reserved_ids)) & (~df.concept_id2.isin(reserved_ids))]
 
-matching_filtered = filter_out_reserved(matching_all, reserved_concept_ids)
-relation_filtered = filter_out_reserved(relation_all, reserved_concepts.concept_id)
+# matching_filtered = filter_out_reserved(matching_all, reserved_concept_ids)
+# relation_filtered = filter_out_reserved(relation_all, reserved_concepts.concept_id)
+
+
+"""
+try to convert the iterable dataset to dataloader 
+"""
+matching_filtered = FilteredIterableDataset(negative_dataset_matching, reserved_concept_ids)
+relation_filtered = FilteredIterableDataset(negative_dataset_relation, reserved_concepts.concept_id)
+
+# Convert it to DataLoader for efficient batching
+filtered_matching_dataloader = DataLoader(matching_filtered, batch_size=64, num_workers=0)
+filtered_relation_dataloader = DataLoader(relation_filtered, batch_size=64, num_workers=0)
+type(filtered_matching_dataloader)
+# <class 'torch.utils.data.dataloader.DataLoader'>
+count = sum(1 for _ in filtered_relation_dataloader)
+print(f"Total dataset size: {count}")
+
+
+# check for the keys 
+for batch in filtered_relation_dataloader:
+    print("Batch keys:", batch.keys()) 
+    break 
+"""
+Batch keys: dict_keys(['sentence1', 'sentence2', 'label'])
+"""
 
 ## reorder rows
 matching_filtered = matching_filtered.sample(frac=1, random_state=42).reset_index(drop=True)
 relation_filtered = relation_filtered.sample(frac=1, random_state=42).reset_index(drop=True)
+
+############
+## shuffle the Iterable dataset and convert them to DataLoader
+############
+shuffled_matching_dataset = ShuffledIterableDataset(matching_filtered, buffer_size=10000, seed=42)
+shuffled_relation_dataset = ShuffledIterableDataset(relation_filtered, buffer_size=10000, seed=42)
+
+shuffled_matching_dataloader = DataLoader(shuffled_matching_dataset, batch_size=64, num_workers=0)
+shuffled_relation_dataloader = DataLoader(shuffled_relation_dataset, batch_size=64, num_workers=0)
+
+for batch in filtered_matching_dataloader:
+    print("Non-Shuffled Batch:", batch)
+    break
+
+for batch in shuffled_matching_dataloader:
+    print("Shuffled Batch:", batch)
+    break
+
+for batch in filtered_relation_dataloader:
+    print("Non-Shuffled Batch:", batch)
+    break
+
+for batch in shuffled_relation_dataloader:
+    print("Shuffled Batch:", batch)
+    break
+
+batch_count = 0
+for batch in shuffled_relation_dataloader:
+    batch_count += 1
+
+print(f"Total number of batches processed: {batch_count}")
 
 print(len(matching_filtered)) # 3500986
 print(len(relation_filtered)) # 14684495
@@ -292,37 +422,3 @@ matching_validation = filter_in_reserved(matching_all, reserved_concept_ids)
 print(len(matching_validation)) # 30794
 
 matching_validation[column_keep].to_feather('data/ML/conceptML_matching_validation.feather')
-
-
-
-
-# try to save the dataset to feather file
-
-def save_iterable_dataset_to_feather(dataset, output_file, batch_size=10000):
-    """
-    Efficiently save an IterableDataset to a Feather file in batches.
-
-    Args:
-        dataset (IterableDataset): The PyTorch IterableDataset to save.
-        output_file (str): Path to save the Feather file.
-        batch_size (int): Number of rows per batch before writing to disk.
-    """
-    batch = []
-    
-    for i, sample in enumerate(dataset):
-        batch.append(sample)
-
-        # When batch reaches `batch_size`, write to Feather
-        if len(batch) >= batch_size:
-            df = pd.DataFrame(batch)
-            feather.write_feather(df, output_file, compression='zstd')  # Efficient compression
-            batch = []  # Reset batch
-
-    # Save the final batch
-    if batch:
-        df = pd.DataFrame(batch)
-        feather.write_feather(df, output_file, compression='zstd')
-
-# Example Usage
-output_path = "negative_samples.feather"
-save_iterable_dataset_to_feather(negative_dataset, output_path)

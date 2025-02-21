@@ -2,6 +2,9 @@ import pandas as pd
 import random
 from tqdm import tqdm
 import torch
+import random
+
+
 
 
 def get_sentence_name(domain_id, concept_name):
@@ -365,6 +368,15 @@ class MatchingNegativeIterableDataset(torch.utils.data.IterableDataset):
     def __iter__(self):
         """Yields only negative samples dynamically"""
         for row in self.positive_dataset_matching:
+            yield {
+            "sentence1": self.matching_token + " " + row["sentence1"],
+            "sentence2": self.matching_token + " " + row["sentence2"],
+            "concept_id1": row["concept_id1"],
+            "concept_id2": row["concept_id2"],
+            "label": row["label"],
+            "source": row["source"] 
+            }
+
             yield from self._generate_negative_samples(row) 
 
 
@@ -571,14 +583,94 @@ class RelationNegativeIterableDataset(torch.utils.data.IterableDataset):
                     "sentence2": self.relation_token + " " + mapped_name,
                     "concept_id1": concept_id1,
                     "concept_id2": int(neg_id),
-                    "label": 0,
-                    "source": "relation_negative"
+                    "label": 0
                 }
 
     def __iter__(self):
         """Yields only negative samples dynamically"""
         for row in self.positive_dataset_relation:
+            yield {
+            "sentence1": self.relation_token + " " + row["sentence1"],
+            "sentence2": self.relation_token + " " + row["sentence2"],
+            "concept_id1": row["concept_id1"],
+            "concept_id2": row["concept_id2"],
+            "label": row["label"]
+        }
+
             yield from self._generate_negative_samples(row)
+
+
+"""
+check for the null and convert the iterable dataset to dataloader for latter trianing 
+
+"""
+class FilteredIterableDataset(torch.utils.data.IterableDataset):
+    def __init__(self, dataset, reserved_ids):
+        """
+        Filters out rows based on reserved_ids and keeps only sentence1, sentence2, and label.
+        
+        Args:
+            dataset (IterableDataset): The input dataset to filter.
+            reserved_ids (set or list): Set of concept IDs to exclude.
+        """
+        self.dataset = dataset
+        self.reserved_ids = set(reserved_ids)
+        self.count = None  
+        
+    def compute_length(self):
+        """Compute and store the total number of valid rows."""
+        if self.count is None:
+            self.count = sum(1 for row in self.dataset if row["concept_id1"] not in self.reserved_ids and row["concept_id2"] not in self.reserved_ids)
+        return self.count
+
+    def get_length(self):
+        return self.count if self.count is not None else "Run compute_length() first!"
+
+    def __iter__(self):
+        """Yield only sentence1, sentence2, and label, filtering out reserved IDs."""
+        for row in self.dataset:
+            if row["concept_id1"] in self.reserved_ids or row["concept_id2"] in self.reserved_ids:
+                continue  
+
+            yield {
+                "sentence1": row["sentence1"],
+                "sentence2": row["sentence2"],
+                "label": row["label"]
+            }
+
+
+"""
+shuffle the dataset with seed = 42
+"""
+class ShuffledIterableDataset(torch.utils.data.IterableDataset):
+    def __init__(self, dataset, buffer_size=10000, seed=42):
+        """
+        A wrapper to shuffle an IterableDataset using a buffer.
+        
+        Args:
+            dataset (IterableDataset): The dataset to shuffle.
+            buffer_size (int): Number of samples to hold before shuffling.
+            seed (int): Random seed for reproducibility.
+        """
+        self.dataset = dataset
+        self.buffer_size = buffer_size
+        self.seed = seed 
+
+    def __iter__(self):
+        buffer = []
+        random.seed(self.seed) 
+
+        for row in self.dataset:
+            buffer.append(row)
+            if len(buffer) >= self.buffer_size:
+                random.shuffle(buffer)
+                while buffer:
+                    yield buffer.pop()
+
+        # Shuffle remaining elements in buffer
+        random.shuffle(buffer)
+        while buffer:
+            yield buffer.pop()
 
 
 def add_special_token(vec, token):
