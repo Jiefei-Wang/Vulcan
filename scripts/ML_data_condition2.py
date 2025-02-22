@@ -28,10 +28,13 @@
 #
 # Iterable Class: params: Number of negative samples
 # 
-
+import os
 import pandas as pd
-from modules.ML_sampling import generate_matching_positive_samples, get_filtered_concept_ancestor, generate_relation_positive_samples, generate_relation_negative_samples,\
-    get_sentence_name, add_special_token_df, MatchingNegativeIterableDataset, RelationNegativeIterableDataset
+import numpy as np
+from modules.ML_sampling import generate_matching_positive_samples, get_filtered_concept_ancestor,\
+    generate_relation_positive_samples, get_sentence_name,\
+    add_special_token_df, OffspringIterableDataset, AncestorIterableDataset, MatchingIterableDataset, add_special_token, get_blacklist_map,\
+    combine_columns,remove_reserved,replace_std_concept_with_reserved
 from datasets import Dataset
 import pyarrow.feather as feather
 
@@ -49,30 +52,40 @@ concept_ancestor = pd.read_feather('data/omop_feather/concept_ancestor.feather')
 
 conceptML = pd.read_feather('data/ML/conceptML1.feather')
 
+reserved_vocab = "CIEL"
+
+
 ## Define the target standard concepts
-std_target = conceptML[conceptML['domain_id'] == 'Condition'].reset_index(drop=True)
+std_target = conceptML[(conceptML['domain_id'] == 'Condition')& (conceptML['vocabulary_id'] != reserved_vocab)].reset_index(drop=True)
 std_target['std_name'] = get_sentence_name(std_target['domain_id'], std_target['concept_name'])
 print(len(std_target))   # 160288
 print(std_target.columns)
+# ['concept_id', 'concept_name', 'domain_id', 'vocabulary_id',
+#        'concept_code', 'nonstd_name', 'nonstd_concept_id', 'synonym_name',
+#        'descriptions', 'std_name']
+
+## For some reserved vocab, they are not standard concepts
+reserved_concepts = concept[(concept.domain_id=="Condition")&(concept.vocabulary_id == reserved_vocab)]
+reserved_concept_ids = set(reserved_concepts.concept_id.to_list())
 
 
-target_standard_ids = std_target['concept_id']
-## Filter concept_ancestor to only include the target standard concepts
-## in either ancestor_concept_id or descendant_concept_id
-concept_ancestor_filtered = get_filtered_concept_ancestor(concept_ancestor, target_standard_ids)
+## remove reserved concepts from 'nonstd_name', 'nonstd_concept_id' list
+std_target[['nonstd_concept_id', 'nonstd_name']] = std_target.apply(
+    lambda x: remove_reserved(x, reserved_concept_ids), axis=1, result_type='expand'
+)
 
 ##########################################
 ## Direct sentence  matching
 ##########################################
 ## combine list of nonstd_name, synonym_name, and descriptions into a single column
 std_target_for_matching = std_target.copy()
-std_target_for_matching["all_nonstd"] = std_target_for_matching[["nonstd_name", "synonym_name", "descriptions"]].apply(
-    lambda x: [j for i in x if i is not None for j in i], axis=1
-)
-## filter out rows with no non-standard names
-std_target_for_matching = std_target_for_matching[std_target_for_matching['all_nonstd'].str.len() > 0]
+std_target_for_matching["all_nonstd"] = combine_columns(
+    std_target_for_matching[["nonstd_name", "synonym_name", "descriptions"]])
 
-print(len(std_target_for_matching))  # 101896
+
+
+## filter out rows with no non-standard names
+print(len(std_target_for_matching))  # 160288
 print(std_target_for_matching.columns)
 """
 Index(['concept_id', 'concept_name', 'domain_id', 'vocabulary_id',
@@ -88,175 +101,109 @@ positive_dataset_matching = generate_matching_positive_samples(
     column_ids = ['nonstd_concept_id', None, None]
     )
 
+
 non_standard_count = positive_dataset_matching['sentence2'].nunique()  
-print(f"Number of non-standard samples: {non_standard_count}") #487682 unique non-standard samples
+print(f"Number of non-standard samples: {non_standard_count}") 
+# Number of non-standard samples: 459427
 
 positive_dataset_matching.iloc[0]
 """
-sentence1      Condition: Neoplasm, benign of hematopoietic s...
-sentence2                                 Lymphoid Benign (LBGN)
+sentence1      Condition: Neoplasm, benign of hema...
+sentence2                      Lymphoid Benign (LBGN)
 concept_id1                                               751726
-concept_id2                                               777429
+concept_id2                                             777429.0
 label                                                          1
 source                                               nonstd_name
+Name: 0, dtype: object
 """
 
 # distribution of source 
 print(positive_dataset_matching['source'].value_counts())
 """
 do we need to make the positive samples balanced?
-nonstd_name     0.667803
-synonym_name    0.246849
-descriptions    0.085348
+nonstd_name     471707
+synonym_name    174363
+descriptions     60286
 """
 
-print(positive_dataset_matching.iloc[0])
 
-# negative sampling strategy:
-# For each row in positive_sample_dataset
-# - sample n_neg(=4) negative samples
-# - negative samples are randomly selected from the standard concepts that are
-# not in the parent/child list of the positive sample
+candidate_df_matching = std_target_for_matching[['concept_id', 'concept_name', 'std_name', 'all_nonstd']].copy()
+candidate_df_matching['concept_name'] = combine_columns(
+    std_target_for_matching[["concept_name", "std_name", "all_nonstd"]]
+)
+candidate_df_matching = candidate_df_matching[['concept_id', 'concept_name']].explode(
+    'concept_name'
+    )
+len(candidate_df_matching)  # 996138
 
-n_neg = 4
-# original method 
-# negative_dataset_matching = generate_matching_negative_samples(
-#     positive_dataset_matching = positive_dataset_matching,
-#     concept_ancestor = concept_ancestor,
-#     std_target_for_matching = std_target_for_matching,
-#     n_neg = n_neg,
-#     seed = 42
-# )
-
-# iterable method
-negative_dataset_matching = MatchingNegativeIterableDataset(
+# Test the iterable dataset
+iterable_matching = MatchingIterableDataset(
     positive_dataset_matching,
-    concept_ancestor,
-    std_target_for_matching,
-    n_neg=40,  
+    candidate_df_matching,
+    n_neg=4,  
     seed=42
 )
 
-type(negative_dataset_matching)
-# <class 'modules.ML_sampling.MatchingNegativeIterableDataset'>
-first_sample = next(iter(negative_dataset_matching))  # Get the first sample
-print(first_sample)
-#{'sentence1': '[MATCHING] Condition: Neoplasm, benign of hematopoietic system, NOS', 
-# 'sentence2': '[MATCHING] Primary squamous cell carcinoma of vermilion border of lip (disorder)',
-# 'concept_id1': 751726, 'concept_id2': 37018880, 'label': 0, 'source': 'matching_negative'}
-
-print("Column Names:", first_sample.keys()) 
-# Column Names: dict_keys(['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label', 'source'])
-
-
-
-len(negative_dataset_matching) # 2825424
-print(negative_dataset_matching.columns) # ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label', 'source']
-
-negative_dataset_matching.iloc[0]
+it = iter(iterable_matching)
+next(it)
 """
-sentence1      Condition: Neoplasm, benign of hematopoietic s...
-sentence2                          Atheroma of Cerebral Arteries
-concept_id1                                               751726
-concept_id2                                              4009154
-label                                                          0
-source                                         matching_negative
+{'sentence1': 'Condition: Neoplasm, benign of hematopoietic system, NOS', 'sentence2': '[MATCHING] Lymphoid Benign (LBGN)', 'concept_id1': 751726, 'concept_id2': 777429, 'label': 1}
 """
+
+## save objects
+os.makedirs('data/ML/matching', exist_ok=True)
+positive_dataset_matching.to_feather('data/ML/matching/positive_dataset_matching.feather')
+candidate_df_matching.to_feather('data/ML/matching/candidate_dataset_matching.feather')
+
 
 ##########################################
 ## Label2: ancestor-descendant relationship
 ## sentence 1: ancestor concept
 ## sentence 2: descendant concept
 ##########################################
+
+## Keep those concept relationship that exists in target_standard_ids
+target_standard_ids = std_target['concept_id']
+concept_ancestor_filtered = get_filtered_concept_ancestor(concept_ancestor, target_standard_ids)
 positive_dataset_relation = generate_relation_positive_samples(concept_ancestor_filtered, concept)
+positive_dataset_relation = positive_dataset_relation[['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']]
+len(positive_dataset_relation) # 2936899
 
-positive_dataset_relation = positive_dataset_relation[['sentence1',
-       'sentence2', 'concept_id1', 'concept_id2', 'label']]
+## Save data
+os.makedirs('data/ML/relation', exist_ok=True)
+positive_dataset_relation.to_feather('data/ML/relation/positive_dataset_relation.feather')
+std_target.to_feather('data/ML/relation/std_target.feather')
 
-positive_dataset_relation.columns
-len(positive_dataset_relation) # 2819798
 
-
-print(positive_dataset_relation.iloc[0])
-"""
-sentence1                         Condition: Lesion of genitalia
-sentence2      Condition: T-cell large granular lymphocytic l...
-concept_id1                                             37110208
-concept_id2                                             36561313
-label                                                          1
-"""
-
-## negative samples
-# negative_dataset_relation = generate_relation_negative_samples(positive_dataset_relation, concept_ancestor_filtered, concept, n_neg=4)
-negative_dataset_relation = RelationNegativeIterableDataset(
-    positive_dataset_relation,  
-    concept_ancestor_filtered,
-    concept,
-    n_neg=40,  
-    seed=42
+n_neg=4
+seed=123
+myiter = OffspringIterableDataset(
+    positive_dataset_relation,
+    std_target
 )
-row_count = sum(1 for _ in negative_dataset_relation)
-print("Total rows in negative_dataset_relation:", row_count)
 
-type(negative_dataset_relation)
-# <class 'modules.ML_sampling.MatchingNegativeIterableDataset'>
-first_sample_rel = next(iter(negative_dataset_relation))  # Get the first sample
-print(first_sample_rel)
-# {'sentence1': '[RELATION] Condition: Lesion of genitalia', 
-# 'sentence2': '[RELATION] Measurement: Surgical margin involved by tumor', 
-# 'concept_id1': 37110208, 'concept_id2': 4184217, 'label': 0, 'source': 'relation_negative'}
+it = iter(myiter)
+next(it)
+"""
+{'sentence1': '[OFFSPRINT] Condition: Lesion of genitalia', 'sentence2': 'Condition: T-cell large granular lymphocytic leukemia of labium majus', 'concept_id1': 37110208, 'concept_id2': 36561313, 'label': 1}
+"""
 
-len(negative_dataset_relation) # 11279192
+##########################
+## Find ancestor concept by adding [ANCESTOR] token
+##########################
+myiter = AncestorIterableDataset(
+    positive_dataset_relation,
+    std_target
+)
 
+it = iter(myiter)
+next(it)
 
-'''
-sentence1              Condition: Lesion of genitalia
-sentence2      Observation: Suprapatellar jerk absent
-concept_id1                                  37110208
-concept_id2                                   3661505
-label                                               0
-Name: 0, dtype: object
-'''
+"""
+{'sentence1': 'Condition: Lesion of genitalia', 'sentence2': '[ANCESTOR] Condition: T-cell large granular lymphocytic 
+leukemia of labium majus', 'concept_id1': 37110208, 'concept_id2': 36561313, 'label': 1}
+"""
 
-positive_dataset_matching.to_feather('data/ML/conceptML_positive_matching.feather')
-negative_dataset_matching.to_feather('data/ML/conceptML_negative_matching.feather')
-positive_dataset_relation.to_feather('data/ML/conceptML_positive_relation.feather')
-negative_dataset_relation.to_feather('data/ML/conceptML_negative_relation.feather')
-
-
-
-
-##################
-## Prepare training and validation dataset
-##################
-positive_dataset_matching = pd.read_feather('data/ML/conceptML_positive_matching.feather')
-negative_dataset_matching = pd.read_feather('data/ML/conceptML_negative_matching.feather')
-positive_dataset_relation = pd.read_feather('data/ML/conceptML_positive_relation.feather')
-negative_dataset_relation = pd.read_feather('data/ML/conceptML_negative_relation.feather')
-
-positive_matching = add_special_token_df(positive_dataset_matching, '[MATCHING]')
-# can be deleted, iterable dataset already add special token
-negative_matching = add_special_token_df(negative_dataset_matching, '[MATCHING]')
-positive_relation = add_special_token_df(positive_dataset_relation, '[RELATION]')
-# can be deleted, iterable dataset already add special token
-negative_relation = add_special_token_df(negative_dataset_relation, '[RELATION]')
-
-matching_all = pd.concat(
-    [positive_matching, negative_matching]
-    ).reset_index(drop=True)
-
-relation_all = pd.concat(
-    [positive_relation, negative_relation]
-    ).reset_index(drop=True)
-
-column_keep = ['sentence1', 'sentence2', 'label']
-## Check for missing values
-matching_all[matching_all[column_keep].isnull().any(axis=1)]
-relation_all[relation_all[column_keep].isnull().any(axis=1)]
-
-
-print(len(matching_all)) # 3531780
-print(len(relation_all)) # 14684495
 
 ##################
 ## Validation dataset
@@ -264,65 +211,94 @@ print(len(relation_all)) # 14684495
 reserved_vocab = "CIEL"
 reserved_concepts = concept[(concept.domain_id=="Condition")&(concept.vocabulary_id == reserved_vocab)]
 print(len(reserved_concepts)) # 38818
+
 reserved_concept_ids = set(reserved_concepts.concept_id.to_list())
 
-## filter out reserved vocab from column concept_id1 and concept_id2
-def filter_out_reserved(df, reserved_ids):
-    return df[(~df.concept_id1.isin(reserved_ids)) & (~df.concept_id2.isin(reserved_ids))]
+## Make sure we can map the reserved concept back to standard concepts
+to_std = concept_relationship[concept_relationship['relationship_id'] == 'Maps to']
+std_bridge = to_std[to_std.concept_id_1.isin(reserved_concept_ids)].rename({'concept_id_1': 'concept_id1', 'concept_id_2': 'concept_id2'}, axis=1)[['concept_id1', 'concept_id2']]
 
-matching_filtered = filter_out_reserved(matching_all, reserved_concept_ids)
-relation_filtered = filter_out_reserved(relation_all, reserved_concepts.concept_id)
+reserved_concepts = reserved_concepts[reserved_concepts['concept_id'].isin(std_bridge.concept_id1.to_list())]
+print(len(reserved_concepts)) # 34217
 
-## reorder rows
-matching_filtered = matching_filtered.sample(frac=1, random_state=42).reset_index(drop=True)
-relation_filtered = relation_filtered.sample(frac=1, random_state=42).reset_index(drop=True)
+## construct validation dataset
+positive_matching_validation = std_bridge.merge(
+    concept[['concept_id', 'concept_name']],
+    left_on='concept_id1',
+    right_on='concept_id',
+    how='inner'
+).rename({'concept_name': 'sentence1'}, axis=1
+).drop('concept_id', axis=1
+).merge(
+    concept[['concept_id', 'concept_name']],
+    left_on='concept_id2',
+    right_on='concept_id',
+    how='inner'
+).rename({'concept_name': 'sentence2'}, axis=1
+).drop('concept_id', axis=1)
 
-print(len(matching_filtered)) # 3500986
-print(len(relation_filtered)) # 14684495
-
-matching_filtered[column_keep].to_feather('data/ML/conceptML_matching.feather')
-relation_filtered[column_keep].to_feather('data/ML/conceptML_relation.feather')
-
-## make validation dataset
-def filter_in_reserved(df, reserved_ids):
-    return df[(df.concept_id1.isin(reserved_ids)) | (df.concept_id2.isin(reserved_ids))]
-
-matching_validation = filter_in_reserved(matching_all, reserved_concept_ids)
-
-print(len(matching_validation)) # 30794
-
-matching_validation[column_keep].to_feather('data/ML/conceptML_matching_validation.feather')
+positive_matching_validation['label'] = 1
 
 
+candidate_matching_validation = std_target[['concept_id', 'std_name']].rename({'std_name': 'concept_name'}, axis=1)
 
 
-# try to save the dataset to feather file
+os.makedirs('data/ML/validation', exist_ok=True)
+positive_matching_validation.to_feather('data/ML/validation/positive_matching_validation.feather')
+candidate_matching_validation.to_feather('data/ML/validation/candidate_matching_validation.feather')
 
-def save_iterable_dataset_to_feather(dataset, output_file, batch_size=10000):
-    """
-    Efficiently save an IterableDataset to a Feather file in batches.
+iterable_matching_validation = MatchingIterableDataset(
+    positive_matching_validation,
+    candidate_df_matching,
+    n_neg=1,  
+    seed=42,
+    special_token_sentence1=True,
+    special_token_sentence2=False,
+    special_token_candidate=False
+)
 
-    Args:
-        dataset (IterableDataset): The PyTorch IterableDataset to save.
-        output_file (str): Path to save the Feather file.
-        batch_size (int): Number of rows per batch before writing to disk.
-    """
-    batch = []
-    
-    for i, sample in enumerate(dataset):
-        batch.append(sample)
+it = iter(iterable_matching_validation)
+next(it)
+"""
+'sentence1': '[MATCHING] Incomplete Illegally Induced Abortion Complicated by Genital Tract and Pelvic Infection', 
+'sentence2': 'Induced termination of pregnancy complicated by genital-pelvic infection', 'concept_id1': 45913718, 'concept_id2': 43530910, 'label': 1
+"""
 
-        # When batch reaches `batch_size`, write to Feather
-        if len(batch) >= batch_size:
-            df = pd.DataFrame(batch)
-            feather.write_feather(df, output_file, compression='zstd')  # Efficient compression
-            batch = []  # Reset batch
 
-    # Save the final batch
-    if batch:
-        df = pd.DataFrame(batch)
-        feather.write_feather(df, output_file, compression='zstd')
+# For offspring
+reserved_std_ids = std_bridge['concept_id2'].to_list()
+concept_ancestor_validation = get_filtered_concept_ancestor(concept_ancestor, reserved_std_ids)
+concept_ancestor_validation = replace_std_concept_with_reserved(concept_ancestor_validation, std_bridge, 'ancestor_concept_id')
+concept_ancestor_validation = replace_std_concept_with_reserved(concept_ancestor_validation, std_bridge, 'descendant_concept_id')
+concept_ancestor_validation = concept_ancestor_validation.drop_duplicates()
+len(concept_ancestor_validation) # 3253525
 
-# Example Usage
-output_path = "negative_samples.feather"
-save_iterable_dataset_to_feather(negative_dataset, output_path)
+
+
+positive_dataset_relation_validation = generate_relation_positive_samples(concept_ancestor_validation, concept)
+
+positive_dataset_relation_validation.iloc[0]
+
+len(positive_dataset_relation_validation) # 2936899
+
+
+## for matching to offspring and ancestor
+positive_dataset_to_offspring_validation = positive_dataset_relation_validation[
+    positive_dataset_relation_validation['concept_id1'].isin(reserved_concept_ids)
+][['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']]
+
+positive_dataset_to_offspring_validation['sentence1'] = positive_dataset_to_offspring_validation['sentence1'].apply(
+    lambda x: f"[offspring] {x}"
+)
+
+
+positive_dataset_to_ancestor_validation = positive_dataset_relation_validation[
+    positive_dataset_relation_validation['concept_id2'].isin(reserved_concept_ids)
+][['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']]
+
+positive_dataset_to_ancestor_validation['sentence2'] = positive_dataset_to_ancestor_validation['sentence2'].apply(
+    lambda x: f"[ancestor] {x}"
+)
+
+positive_dataset_to_offspring_validation.to_feather('data/ML/validation/positive_dataset_to_offspring_validation.feather')
+positive_dataset_to_ancestor_validation.to_feather('data/ML/validation/positive_dataset_to_ancestor_validation.feather')

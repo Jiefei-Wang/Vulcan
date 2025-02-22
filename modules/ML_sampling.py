@@ -2,6 +2,17 @@ import pandas as pd
 import random
 from tqdm import tqdm
 import torch
+import numpy as np
+
+
+def remove_reserved(row, reserved_ids):
+    nonstd_concept_id = row['nonstd_concept_id']
+    nonstd_name = row['nonstd_name']
+    if nonstd_concept_id is None:
+        return None, None
+    nonstd_name = [x for i, x in enumerate(nonstd_name) if nonstd_concept_id[i] not in reserved_ids]
+    nonstd_concept_id = [x for x in nonstd_concept_id if x not in reserved_ids]
+    return nonstd_concept_id, nonstd_name
 
 
 def get_sentence_name(domain_id, concept_name):
@@ -74,7 +85,7 @@ def create_relation_maps(concept_ancestor):
 
 
 
-# df = std_condition_with_nonstd_updated.copy()
+# df = std_target_for_matching.copy()
 # columns = ['nonstd_name', 'synonym_name', 'descriptions']
 # column_ids = ['nonstd_concept_id', None, None]
 def generate_matching_positive_samples(df, columns, column_ids):
@@ -89,6 +100,8 @@ def generate_matching_positive_samples(df, columns, column_ids):
     Returns:
         pd.DataFrame: A processed dataset with exploded rows and additional metadata.
     """
+    df = df[df['all_nonstd'].str.len() > 0].reset_index()
+
     column_keep = ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label', 'source']
     result_frames = []
     for idx in range(len(columns)):
@@ -120,252 +133,122 @@ def generate_matching_positive_samples(df, columns, column_ids):
     return final_dataset
 
 
-# positive_samples = positive_sample_dataset
 
-# def generate_matching_negative_samples(
-#     positive_dataset_matching: pd.DataFrame,
-#     concept_ancestor: pd.DataFrame,
-#     std_target_for_matching: pd.DataFrame,
-#     n_neg: int = 4,
-#     seed: int = 42
-# ) -> pd.DataFrame:
-#     """
-#     Generate negative samples for each row in positive_samples.
-    
-#     Parameters
-#     ----------
-#     positive_samples : pd.DataFrame
-#         Must contain at least columns: ["sentence1", "concept_id1"].
-        
-#     concept_ancestor : pd.DataFrame
-        
-#     std_target_for_matching : pd.DataFrame
-#         Must contain ["concept_id", "all_nonstd", "std_name"] for standard concepts.
-        
-#     n_neg : int
-#         Number of negative samples to generate per positive sample row.
-        
-#     seed : int
-#         Random seed for reproducible sampling.
-        
-#     Returns
-#     -------
-#     pd.DataFrame
-#         Columns: ["sentence1", "sentence2", "concept_id1", "concept_id2", "label", "source"] 
-#         with label = 0 for negatives, source = "negative".
-#     """
-#     random.seed(seed)
-    
-#     target_ids_for_matching = std_target_for_matching['concept_id']
-#     concept_ancestor_filtered = get_filtered_concept_ancestor(concept_ancestor, target_ids_for_matching)
-#     relation_maps = create_relation_maps(concept_ancestor_filtered)
-#     len(relation_maps) # 168816
-    
-#     # Make a dict to map std concept id to its exclusion list
-#     relation_maps2 = relation_maps[['from_concept_id', 'to_concept_id']].copy()
-#     relation_maps2.set_index("from_concept_id", inplace=True)
-#     relation_maps2['to_concept_id'] = relation_maps2['to_concept_id'].apply(lambda x: set(x))
-#     std_id_to_excluded = relation_maps2.to_dict()['to_concept_id']
-    
-#     ## prepare the mapping from concept_id to all possible names
-#     std_maps_df = std_target_for_matching[['concept_id', "all_nonstd", "std_name"]].copy()
-#     std_maps_df["all_names"] = std_maps_df.apply(
-#         lambda x: x["all_nonstd"] + [x["std_name"]], axis=1
-#     )
-#     std_maps_df['maps_num'] = std_maps_df['all_names'].apply(lambda x: len(x))
-    
-#     ## Attach sample_idx to each name for sampling
-#     ## Column: concept_id, all_names, sample_idx
-#     id_to_names_df=std_maps_df[['concept_id', 'all_names']].copy()
-#     id_to_names_df['sample_idx'] = id_to_names_df['all_names'].apply(lambda x: [i for i in range(len(x))])
-#     id_to_names_df = id_to_names_df.explode(
-#     ["all_names", 'sample_idx']
-#     )
-    
-    
-#     # for each row in positive_samples:
-#     # 1. randomly sample 2*n_neg standard concept IDs
-#     # 2. filter out the ones in the exclusion list
-#     # 3. keep n_neg samples from the remaining set
-#     all_std_ids = std_target_for_matching["concept_id"].to_list()
-#     all_std_ids_set = set(all_std_ids)
-    
-#     # 1. randomly sample 2*n_neg standard concept IDs
-#     negative_samples = positive_dataset_matching[['sentence1', 'concept_id1']].copy()
-#     negative_samples['index'] = negative_samples.index
-#     negative_samples["choices"] = [random.sample(all_std_ids, 2*n_neg) for _ in range(len(positive_dataset_matching))]
-    
-#     ## Refine the sampled choices such that they are not in the exclude set
-#     for i, row in tqdm(negative_samples.iterrows(), total=len(negative_samples)):
-#         std_id = row["concept_id1"]
-#         choices = row["choices"]
-#         exclude_ids = std_id_to_excluded.get(std_id, set())
-#         choices_filtered = list(set(choices) - exclude_ids)
-        
-#         ## if the filtered set is too small, add more
-#         ## if the filtered set is too large, keep the first n_neg
-#         if len(choices_filtered) < n_neg:
-#             n_neg_more = n_neg - len(choices_filtered)
-#             candidate_ids = list(all_std_ids_set - exclude_ids - set(choices_filtered))
-#             n_neg_more = min(n_neg_more, len(candidate_ids))
-#             additional_ids = random.sample(candidate_ids, n_neg_more)
-#             choices_filtered += additional_ids
-#         elif len(choices_filtered) > n_neg:
-#             choices_filtered = choices_filtered[:n_neg]
-        
-#         ## update the choices
-#         negative_samples.at[i, "choices"] = choices_filtered
-        
-    
-#     neg_df = negative_samples[['index','choices']]
-#     neg_df = neg_df.explode("choices")
-#     ## randomly pick number from 0 to 100000 with replacement
-#     neg_df['sample_idx'] = [random.randint(0, 100000) for _ in range(len(neg_df))]
-    
-#     # Obtain the number of possible negative samples for each concept_id
-#     neg_df = neg_df.merge(
-#         std_maps_df[['concept_id', 'maps_num']],
-#         left_on='choices',
-#         right_on='concept_id',
-#         how='left'
-#     ).drop(columns='concept_id')
-    
-#     neg_df.columns
-#     # ['index', 'choices', 'sample_idx', 'maps_num']
-    
-#     ## recalculate the sample_idx to be within the range of maps_num
-#     neg_df['sample_idx'] = neg_df.apply(
-#         lambda x: x['sample_idx'] % x['maps_num'], axis=1
-#     )
-#     len(neg_df) # 2825424
-    
-#     ## obtain the name of the mapped nonstd name
-#     neg_df = neg_df.merge(
-#         id_to_names_df,
-#         left_on=['choices', 'sample_idx'],
-#         right_on=['concept_id', 'sample_idx'],
-#         how='inner'
-#     ).drop(
-#         columns=['maps_num', 'choices', 'sample_idx']
-#     ).rename(
-#     columns={
-#     "all_names": "sentence2",
-#     "concept_id": "concept_id2"}
-#     )
-    
-#     neg_df.columns
-#     # ['index', 'concept_id2', 'sentence2']
-    
-    
-#     ## merge with the original negative_samples_list
-#     negative_samples = negative_samples.merge(
-#         neg_df[['index', 'concept_id2', 'sentence2']],
-#         left_on='index',
-#         right_on='index',
-#         how='inner'
-#     ).drop(columns=['choices']).reset_index(drop=True)
-    
-#     negative_samples['label'] = 0
-#     negative_samples['source'] = 'matching_negative'
-    
-#     negative_samples = negative_samples[['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label', 'source']]
-    
-#     negative_samples.columns
-#     # ['sentence1', 'concept_id1', 'index', 'concept_id2', 'sentence2', 'source']
-    
-#     return negative_samples
-
-
-class MatchingNegativeIterableDataset(torch.utils.data.IterableDataset):
-    def __init__(self, 
-                 positive_dataset_matching, 
-                 concept_ancestor, 
-                 std_target_for_matching, 
-                 n_neg=4, 
-                 seed=42):
+class GenericIterableDataset(torch.utils.data.IterableDataset):
+    def __init__(self,
+                positive_df,
+                candidate_df,
+                blacklist_map,
+                n_neg=4,
+                seed=42):
         """
-        Iterable dataset for generating negative samples dynamically.
-        
         Args:
-            positive_dataset_matching (Iterable): Iterable dataset of positive pairs.
-            concept_ancestor (pd.DataFrame): Concept ancestor relationships.
-            std_target_for_matching (pd.DataFrame): Standard concept dataset.
-            n_neg (int): Number of negative samples per positive sample.
-            seed (int): Random seed.
+            positive_df (pd.DataFrame): DataFrame containing positive samples. Requires columns: sentence1, sentence2, concept_id1, concept_id2.
+            candidate_df (pd.DataFrame): DataFrame containing candidate samples. Requires columns: concept_id, concept_name.
+            blacklist_map (dict): Dictionary mapping concept_id1 to a set of row indices in candidate_df that are blacklisted.
+            n_neg (int): Number of negative samples to generate for each positive sample.
+            seed (int): Random seed for reproducibility.
         """
-        print("get in MatchingNegativeIterableDataset")
-        if isinstance(positive_dataset_matching, pd.DataFrame):
-            self.positive_dataset_matching = positive_dataset_matching.to_dict(orient="records")
-        else:
-            self.positive_dataset_matching = positive_dataset_matching  # Already iterable
-        self.concept_ancestor = concept_ancestor
-        self.std_target_for_matching = std_target_for_matching
+        self.positive_df = positive_df
+        self.blacklist_map = blacklist_map
+        self.candidate_df = candidate_df.reset_index(drop=True)
         self.n_neg = n_neg
         self.seed = seed
-        random.seed(seed)
-
-        # Special token for sentence pairs
-        self.matching_token = "[MATCHING]"
-
-        # Precompute exclusion lists (relation maps)
-        target_ids_for_matching = std_target_for_matching['concept_id']
-        self.concept_ancestor_filtered = get_filtered_concept_ancestor(concept_ancestor, target_ids_for_matching)
-        relation_maps = create_relation_maps(self.concept_ancestor_filtered)
-        
-        relation_maps2 = relation_maps[['from_concept_id', 'to_concept_id']].copy()
-        relation_maps2.set_index("from_concept_id", inplace=True)
-        relation_maps2['to_concept_id'] = relation_maps2['to_concept_id'].apply(lambda x: set(x))
-        self.std_id_to_excluded = relation_maps2.to_dict()['to_concept_id']
-        
-        # Prepare concept mapping for negatives
-        std_maps_df = std_target_for_matching[['concept_id', "all_nonstd", "std_name"]].copy()
-        std_maps_df["all_names"] = std_maps_df.apply(lambda x: x["all_nonstd"] + [x["std_name"]], axis=1)
-        std_maps_df['maps_num'] = std_maps_df['all_names'].apply(len)
-        
-        self.id_to_names_df = std_maps_df[['concept_id', 'all_names']].copy()
-        self.id_to_names_df['sample_idx'] = self.id_to_names_df['all_names'].apply(lambda x: list(range(len(x))))
-        self.id_to_names_df = self.id_to_names_df.explode(["all_names", 'sample_idx'])
-
-        self.all_std_ids = std_target_for_matching["concept_id"].to_list()
-        self.all_std_ids_set = set(self.all_std_ids)
-
+        self.random = random.Random(seed)
+    
     def _generate_negative_samples(self, row):
-        """Generate n_neg negative samples dynamically for a given row"""
-        std_id = row["concept_id1"]
-        exclude_ids = self.std_id_to_excluded.get(std_id, set())
+        """Generate `n_neg` negative samples dynamically for a given row"""
+        concept_id1 = row["concept_id1"]
+        blacklist_set = self.blacklist_map[concept_id1]
 
-        # Randomly sample 2*n_neg candidates
-        choices = random.sample(self.all_std_ids, 2 * self.n_neg)
-        choices_filtered = list(set(choices) - exclude_ids)
+        candidate_row_ids = range(len(self.candidate_df))
+        # Randomly sample 2 * n_neg candidates
+        choices = self.random.sample(candidate_row_ids, 2 * self.n_neg)
 
-        # Adjust number of negatives
+        # Filter out invalid choices (same ID and blacklisted pairs)
+        choices_filtered = [
+            neg_id for neg_id in choices
+            if neg_id not in blacklist_set
+        ]
+
+        # Ensure exactly `n_neg` negative samples
         if len(choices_filtered) < self.n_neg:
-            n_neg_more = self.n_neg - len(choices_filtered)
-            candidate_ids = list(self.all_std_ids_set - exclude_ids - set(choices_filtered))
-            additional_ids = random.sample(candidate_ids, min(n_neg_more, len(candidate_ids)))
-            choices_filtered += additional_ids
+            extra_needed = self.n_neg - len(choices_filtered)
+            remaining_candidates = list(set(candidate_row_ids) - set(choices_filtered) - blacklist_set)
+            additional_choices = self.random.sample(remaining_candidates, min(extra_needed, len(remaining_candidates)))
+            choices_filtered += additional_choices
         elif len(choices_filtered) > self.n_neg:
             choices_filtered = choices_filtered[:self.n_neg]
 
-        # Assign negative names
-        for neg_id in choices_filtered:
-            filtered_df = self.id_to_names_df[self.id_to_names_df["concept_id"] == neg_id]
-            if not filtered_df.empty:
-                mapped_name = filtered_df["all_names"].sample().values[0]
-                yield {
-                "sentence1": self.matching_token + " " + row["sentence1"],
-                "sentence2": self.matching_token + " " + mapped_name, 
-                "concept_id1": row["concept_id1"],
-                "concept_id2": neg_id,
-                "label": 0,
-                "source": "matching_negative"
-                }
-            
+        # Generate negative samples
+        for row_idx in choices_filtered:
+            concept_info = self.candidate_df.iloc[row_idx]
+            yield {
+                "sentence1": row["sentence1"],
+                "sentence2": concept_info["concept_name"],
+                "concept_id1": concept_id1,
+                "concept_id2": concept_info["concept_id"],
+                "label": 0
+            }
 
     def __iter__(self):
-        """Yields only negative samples dynamically"""
-        for row in self.positive_dataset_matching:
-            yield from self._generate_negative_samples(row) 
+        for index, row in self.positive_df.iterrows():
+            self.index = index
+            yield row.to_dict()
+            yield from self._generate_negative_samples(row)
+            
+    ## print function
+    def __str__(self):
+        return f"GenericIterableDataset: {self.index}/{len(self.positive_df)}"
+
+
+class MatchingIterableDataset(torch.utils.data.IterableDataset):
+    def __init__(self,
+                positive_df_matching,
+                matching_candidate_df,
+                n_neg=40,
+                seed=42,
+                special_token_sentence1 = False,
+                special_token_sentence2 = True,
+                special_token_candidate = True):
+        
+        positive_df = positive_df_matching[["sentence1", "sentence2", "concept_id1", "concept_id2", "label"]].copy()
+        
+        ## Create candidate_df
+        candidate_df = matching_candidate_df[["concept_id", "concept_name"]].reset_index(drop=True)
+        
+        ## add special token
+        if special_token_sentence1:
+            positive_df['sentence1'] = add_special_token(positive_df['sentence1'], "[MATCHING]")
+        if special_token_sentence2:
+            positive_df['sentence2'] = add_special_token(positive_df['sentence2'], "[MATCHING]")
+        if special_token_candidate:
+            candidate_df['concept_name'] = add_special_token(candidate_df['concept_name'], "[MATCHING]")
+        
+        ## Create blacklist_map
+        target_ids = positive_df["concept_id1"].unique()
+        blacklist_df = pd.DataFrame({
+            "concept_id1": target_ids,
+            "concept_id2": target_ids
+        })
+        blacklist_map = get_blacklist_map(target_ids, candidate_df, blacklist_df)
+        
+        
+        self.iterator = GenericIterableDataset(
+            positive_df,
+            candidate_df,
+            blacklist_map,
+            n_neg=n_neg,
+            seed=seed
+        )
+    
+    def __iter__(self):
+        return self.iterator.__iter__()
+    
+    def __str__(self):
+        return self.iterator.__str__()
+
+
 
 
 def generate_relation_positive_samples(
@@ -376,8 +259,8 @@ def generate_relation_positive_samples(
     Generate positive samples for ancestor-descendant relationships.
     
     Args:
-        concept_ancestor_filtered (pd.DataFrame): Filtered concept_ancestor table that you want to use to generate positive samples.
-        concept (pd.DataFrame): Concept table to provide concept names.
+        concept_ancestor_filtered (pd.DataFrame): Filtered concept_ancestor table that you want to use to generate positive samples. Requires columns: ancestor_concept_id, descendant_concept_id.
+        concept (pd.DataFrame): Concept table to provide concept names. Requires columns: concept_id, concept_name, domain_id.
     Returns:
         pd.DataFrame: Positive samples dataset with at least
         ["sentence1", "sentence2","label"].
@@ -422,6 +305,88 @@ def generate_relation_positive_samples(
     len(positive_dataset) # 2819798
     
     return positive_dataset
+
+
+
+
+class OffspringIterableDataset(torch.utils.data.IterableDataset):
+    def __init__(self,
+                positive_dataset_relation,
+                std_target,
+                n_neg=40,
+                seed=42):
+        target_standard_ids = std_target['concept_id']
+        
+        candidate_df = std_target.copy()[['concept_id', 'std_name']].rename(columns={'std_name': 'concept_name'})
+        
+        positive_df = positive_dataset_relation[['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']].copy()
+
+        blacklist_map = get_blacklist_map(target_standard_ids, candidate_df, positive_df)
+
+        ## For [OFFSPRINT] token
+        to_offspring_token = '[OFFSPRINT]'
+        positive_df['sentence1'] = positive_df['sentence1'].apply(lambda x: add_special_token(x, to_offspring_token))
+        
+        
+        self.iterator = GenericIterableDataset(
+            positive_df,
+            candidate_df,
+            blacklist_map,
+            n_neg=n_neg,
+            seed=seed
+        )
+    
+    def __iter__(self):
+        return self.iterator.__iter__()
+    
+    def __str__(self):
+        return self.iterator.__str__()
+
+
+
+
+class AncestorIterableDataset(torch.utils.data.IterableDataset):
+    def __init__(self,
+                positive_dataset_relation,
+                std_target,
+                n_neg=40,
+                seed=42):
+        target_standard_ids = std_target['concept_id']
+        
+        candidate_df = std_target.copy()[['concept_id', 'std_name']].rename(columns={'std_name': 'concept_name'})
+        
+        positive_df = positive_dataset_relation[['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']].copy()
+
+        blacklist_df = positive_df.rename(columns={'concept_id1': 'concept_id2', 'concept_id2': 'concept_id1'})
+
+        blacklist_map = get_blacklist_map(target_standard_ids, candidate_df, blacklist_df)
+
+
+
+        ## For [ANCESTOR] token
+        to_ancestor_token = '[ANCESTOR]'
+        positive_df['sentence2'] = positive_df['sentence2'].apply(lambda x: add_special_token(x, to_ancestor_token))
+        candidate_df['concept_name'] = candidate_df['concept_name'].apply(lambda x: add_special_token(x, to_ancestor_token))
+
+        
+        
+        self.iterator = GenericIterableDataset(
+            positive_df,
+            candidate_df,
+            blacklist_map,
+            n_neg=n_neg,
+            seed=seed
+        )
+    
+    def __iter__(self):
+        return self.iterator.__iter__()
+    
+    def __str__(self):
+        return self.iterator.__str__()
+
+
+
+
 
 
 # def generate_relation_negative_samples(
@@ -492,6 +457,13 @@ def generate_relation_positive_samples(
 #     negative_dataset_relation = negative_dataset_relation[['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']]
     
 #     return negative_dataset_relation
+
+
+
+
+
+
+
 
 
 class RelationNegativeIterableDataset(torch.utils.data.IterableDataset):
@@ -581,12 +553,76 @@ class RelationNegativeIterableDataset(torch.utils.data.IterableDataset):
             yield from self._generate_negative_samples(row)
 
 
-def add_special_token(vec, token):
-    vec = token + " " + vec
-    return vec
+def add_special_token(x, token):
+    x = token + " " + x
+    return x
 
 
 def add_special_token_df(df, token):
     df['sentence1'] = add_special_token(df['sentence1'], token)
     df['sentence2'] = add_special_token(df['sentence2'], token)
     return df
+
+
+def get_blacklist_map(positive_ids, candidate_df, blacklist_df):
+    """
+    Create a map of forbidden concept pairs. The map is from concept_id1 to a set of row indices in candidate_df that are blacklisted.
+    
+    Args:
+        positive_ids (list): List of positive concept IDs.
+        candidate_df (pd.DataFrame): DataFrame containing candidate concepts. Required columns: 'concept_id'.
+        blacklist_df (pd.DataFrame): DataFrame containing blacklisted concept pairs. Required columns: 'concept_id1', 'concept_id2'.
+    """
+    candidateIndex_df = candidate_df[['concept_id']].copy()
+    candidateIndex_df['row_index'] = candidateIndex_df.index
+
+    blacklist_df = blacklist_df[['concept_id1', 'concept_id2']].copy()
+    blacklist_df_self = pd.DataFrame({
+        "concept_id1": positive_ids,
+        "concept_id2": positive_ids
+    })
+    blacklist_df = pd.concat([blacklist_df, blacklist_df_self])
+
+    blacklist_df = blacklist_df[['concept_id1', 'concept_id2']].drop_duplicates()
+    blacklist_df = blacklist_df.merge(candidateIndex_df, left_on='concept_id2', right_on='concept_id', how='left')
+    blacklist_df = blacklist_df[['concept_id1', 'row_index']]
+
+    ## Create a map of concept_id1 to a set of blacklisted row_index
+    blacklist_map = blacklist_df.groupby("concept_id1")["row_index"].apply(set).to_dict()
+    return blacklist_map
+
+
+
+## Combine pd.Series of list or string into a single list
+def combine_elements(x):
+        res = []
+        for i in x:
+            if isinstance(i, list) or isinstance(i, np.ndarray):
+                res.extend([j for j in i if j is not None])
+            elif isinstance(i, str):
+                res.append(i)
+        return res
+    
+def combine_columns(df):
+    res = df.apply(combine_elements, axis=1)
+    return res
+
+
+def replace_std_concept_with_reserved(concept_ancestor_validation, std_bridge, column):
+    """
+    Return an ancestor table with at least one of the concept_id being the reserved concept
+    """
+    concept_ancestor_validation = concept_ancestor_validation.merge(
+        std_bridge,
+        left_on=column,
+        right_on='concept_id2',
+        how='left'
+    )
+
+    ## combine concept_id1 and ancestor_concept_id
+    ## if concept_id1 is not none, use it, otherwise use ancestor_concept_id
+    replacement = concept_ancestor_validation['concept_id1']
+    concept_ancestor_validation.loc[~replacement.isna(), column] = replacement[~replacement.isna()]
+    concept_ancestor_validation = concept_ancestor_validation[['ancestor_concept_id', 'descendant_concept_id']]
+    
+    return concept_ancestor_validation
