@@ -134,7 +134,7 @@ candidate_df_matching['concept_name'] = combine_columns(
 candidate_df_matching = candidate_df_matching[['concept_id', 'concept_name']].explode(
     'concept_name'
     )
-len(candidate_df_matching)  # 996138
+len(candidate_df_matching)  #160288
 
 # Test the iterable dataset
 iterable_matching = MatchingIterableDataset(
