@@ -134,7 +134,7 @@ def generate_matching_positive_samples(df, columns, column_ids):
 
 
 
-class GenericIterableDataset(torch.utils.data.IterableDataset):
+class GenericIterableDataset():
     def __init__(self,
                 positive_df,
                 candidate_df,
@@ -155,6 +155,7 @@ class GenericIterableDataset(torch.utils.data.IterableDataset):
         self.n_neg = n_neg
         self.seed = seed
         self.random = random.Random(seed)
+        self.training = False
     
     def _generate_negative_samples(self, row):
         """Generate `n_neg` negative samples dynamically for a given row"""
@@ -196,28 +197,34 @@ class GenericIterableDataset(torch.utils.data.IterableDataset):
             self.index = index
             yield row.to_dict()
             yield from self._generate_negative_samples(row)
-            
+
+    def trainer_iter(self):
+        it = self.__iter__()
+        for i in it:
+            yield {nm:i[nm] for nm in ['sentence1', 'sentence2', 'label']}
+        
     ## print function
     def __str__(self):
-        return f"GenericIterableDataset: {self.index}/{len(self.positive_df)}"
+        return f"GenericIterableDataset\n Progress: {self.index}/{len(self.positive_df)}"
+    
+    
 
-
-class MatchingIterableDataset(torch.utils.data.IterableDataset):
+class MatchingIterableDataset(GenericIterableDataset):
     def __init__(self,
-                positive_df_matching,
-                matching_candidate_df,
-                n_neg=40,
-                seed=42,
-                special_token_sentence1 = False,
-                special_token_sentence2 = True,
-                special_token_candidate = True):
+                 positive_df_matching,
+                 matching_candidate_df,
+                 n_neg=40,
+                 seed=42,
+                 special_token_sentence1=False,
+                 special_token_sentence2=True,
+                 special_token_candidate=True):
         
         positive_df = positive_df_matching[["sentence1", "sentence2", "concept_id1", "concept_id2", "label"]].copy()
         
-        ## Create candidate_df
+        # Create candidate_df
         candidate_df = matching_candidate_df[["concept_id", "concept_name"]].reset_index(drop=True)
         
-        ## add special token
+        # Add special tokens if specified
         if special_token_sentence1:
             positive_df['sentence1'] = add_special_token(positive_df['sentence1'], "[MATCHING]")
         if special_token_sentence2:
@@ -225,7 +232,7 @@ class MatchingIterableDataset(torch.utils.data.IterableDataset):
         if special_token_candidate:
             candidate_df['concept_name'] = add_special_token(candidate_df['concept_name'], "[MATCHING]")
         
-        ## Create blacklist_map
+        # Create blacklist_map
         target_ids = positive_df["concept_id1"].unique()
         blacklist_df = pd.DataFrame({
             "concept_id1": target_ids,
@@ -233,20 +240,13 @@ class MatchingIterableDataset(torch.utils.data.IterableDataset):
         })
         blacklist_map = get_blacklist_map(target_ids, candidate_df, blacklist_df)
         
-        
-        self.iterator = GenericIterableDataset(
-            positive_df,
-            candidate_df,
-            blacklist_map,
+        super().__init__(
+            positive_df=positive_df,
+            candidate_df=candidate_df,
+            blacklist_map=blacklist_map,
             n_neg=n_neg,
             seed=seed
         )
-    
-    def __iter__(self):
-        return self.iterator.__iter__()
-    
-    def __str__(self):
-        return self.iterator.__str__()
 
 
 
@@ -308,82 +308,56 @@ def generate_relation_positive_samples(
 
 
 
-
-class OffspringIterableDataset(torch.utils.data.IterableDataset):
+class OffspringIterableDataset(GenericIterableDataset):
     def __init__(self,
-                positive_dataset_relation,
-                std_target,
-                n_neg=40,
-                seed=42):
+                 positive_dataset_relation,
+                 std_target,
+                 n_neg=40,
+                 seed=42):
+        
         target_standard_ids = std_target['concept_id']
-        
         candidate_df = std_target.copy()[['concept_id', 'std_name']].rename(columns={'std_name': 'concept_name'})
-        
         positive_df = positive_dataset_relation[['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']].copy()
 
         blacklist_map = get_blacklist_map(target_standard_ids, candidate_df, positive_df)
 
-        ## For [OFFSPRINT] token
         to_offspring_token = '[OFFSPRINT]'
         positive_df['sentence1'] = positive_df['sentence1'].apply(lambda x: add_special_token(x, to_offspring_token))
-        
-        
-        self.iterator = GenericIterableDataset(
-            positive_df,
-            candidate_df,
-            blacklist_map,
+
+        super().__init__(
+            positive_df=positive_df,
+            candidate_df=candidate_df,
+            blacklist_map=blacklist_map,
             n_neg=n_neg,
             seed=seed
         )
-    
-    def __iter__(self):
-        return self.iterator.__iter__()
-    
-    def __str__(self):
-        return self.iterator.__str__()
 
 
-
-
-class AncestorIterableDataset(torch.utils.data.IterableDataset):
+class AncestorIterableDataset(GenericIterableDataset):
     def __init__(self,
-                positive_dataset_relation,
-                std_target,
-                n_neg=40,
-                seed=42):
+                 positive_dataset_relation,
+                 std_target,
+                 n_neg=40,
+                 seed=42):
+        
         target_standard_ids = std_target['concept_id']
-        
         candidate_df = std_target.copy()[['concept_id', 'std_name']].rename(columns={'std_name': 'concept_name'})
-        
         positive_df = positive_dataset_relation[['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']].copy()
 
         blacklist_df = positive_df.rename(columns={'concept_id1': 'concept_id2', 'concept_id2': 'concept_id1'})
-
         blacklist_map = get_blacklist_map(target_standard_ids, candidate_df, blacklist_df)
 
-
-
-        ## For [ANCESTOR] token
         to_ancestor_token = '[ANCESTOR]'
         positive_df['sentence2'] = positive_df['sentence2'].apply(lambda x: add_special_token(x, to_ancestor_token))
         candidate_df['concept_name'] = candidate_df['concept_name'].apply(lambda x: add_special_token(x, to_ancestor_token))
 
-        
-        
-        self.iterator = GenericIterableDataset(
-            positive_df,
-            candidate_df,
-            blacklist_map,
+        super().__init__(
+            positive_df=positive_df,
+            candidate_df=candidate_df,
+            blacklist_map=blacklist_map,
             n_neg=n_neg,
             seed=seed
         )
-    
-    def __iter__(self):
-        return self.iterator.__iter__()
-    
-    def __str__(self):
-        return self.iterator.__str__()
-
 
 
 

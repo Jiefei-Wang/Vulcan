@@ -3,31 +3,39 @@ import time
 from tqdm import tqdm
 import random
 
-from modules.ML_sampling import MatchingIterableDataset, RelationNegativeIterableDataset, add_special_token
+from modules.ML_data import get_matching
+from datasets import IterableDataset
+
 
 positive_dataset_matching = pd.read_feather('data/ML/matching/positive_dataset_matching.feather')
-candidate_df_matching = pd.read_feather('data/ML/matching/candidate_dataset_matching.feather')
+
+data_folder = 'data/ML'
+iterable_matching = get_matching(data_folder)
+matching_ds = IterableDataset.from_generator(iterable_matching.__iter__)
+
+def measuring_time(it, ntotal, n_limit=100000):
+    n=0
+    start = time.time()
+    for i in tqdm(it, total=ntotal):
+        n += 1
+        if n > n_limit:
+            break
+    end = time.time()
+    return end1 - start1
 
 
-iterable_matching = MatchingIterableDataset(
-    positive_dataset_matching,
-    candidate_df_matching,
-    n_neg=4,  
-    seed=42
-)
 
-len(positive_df_matching)*5
+ntotal = len(positive_dataset_matching)*5
+ntotal
 
-n=0
-start1 = time.time()
-for it in tqdm(iterable_matching):
-    n += 1
-    # if n > 1000000:
-    #     break
-end1 = time.time()
-print(end1 - start1)
+measuring_time(iterable_matching, ntotal)
+# 5.217
 
-print(iterable_matching)
-# 43.80s
+measuring_time(matching_ds, ntotal)
+# 5.217
+
+it = matching_ds.shuffle(seed=42)
+measuring_time(it, ntotal)
+# 5.217
 
 

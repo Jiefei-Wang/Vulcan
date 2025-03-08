@@ -39,9 +39,8 @@ from datasets import Dataset
 import pyarrow.feather as feather
 
 # relaod kernel to get the latest version of the modules
-import importlib
-import modules.ML_sampling
-importlib.reload(modules.ML_sampling)
+# Code has been moved to scripts/reload_library.py
+
 
 # Precise mapping, sentence1 maps to sentence 2
 
@@ -121,7 +120,7 @@ Name: 0, dtype: object
 print(positive_dataset_matching['source'].value_counts())
 """
 do we need to make the positive samples balanced?
-nonstd_name     471707
+nonstd_name     440913
 synonym_name    174363
 descriptions     60286
 """
@@ -169,11 +168,6 @@ positive_dataset_relation = generate_relation_positive_samples(concept_ancestor_
 positive_dataset_relation = positive_dataset_relation[['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']]
 len(positive_dataset_relation) # 2936899
 
-## Save data
-os.makedirs('data/ML/relation', exist_ok=True)
-positive_dataset_relation.to_feather('data/ML/relation/positive_dataset_relation.feather')
-std_target.to_feather('data/ML/relation/std_target.feather')
-
 
 n_neg=4
 seed=123
@@ -187,6 +181,11 @@ next(it)
 """
 {'sentence1': '[OFFSPRINT] Condition: Lesion of genitalia', 'sentence2': 'Condition: T-cell large granular lymphocytic leukemia of labium majus', 'concept_id1': 37110208, 'concept_id2': 36561313, 'label': 1}
 """
+
+## Save data
+os.makedirs('data/ML/relation', exist_ok=True)
+positive_dataset_relation.to_feather('data/ML/relation/positive_dataset_relation.feather')
+std_target.to_feather('data/ML/relation/std_target.feather')
 
 ##########################
 ## Find ancestor concept by adding [ANCESTOR] token
@@ -249,7 +248,7 @@ candidate_matching_validation.to_feather('data/ML/validation/candidate_matching_
 
 iterable_matching_validation = MatchingIterableDataset(
     positive_matching_validation,
-    candidate_df_matching,
+    candidate_matching_validation,
     n_neg=1,  
     seed=42,
     special_token_sentence1=True,
