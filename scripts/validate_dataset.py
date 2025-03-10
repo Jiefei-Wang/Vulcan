@@ -13,7 +13,8 @@ positive_dataset_matching = pd.read_feather('data/ML/matching/positive_dataset_m
 candidate_df_matching = pd.read_feather('data/ML/matching/candidate_dataset_matching.feather')
 
 
-concept_dict = concept.set_index("concept_id")["concept_name"].to_dict()
+concept[concept['concept_name'] == 'Neoplasm of uncertain behaviour of larynx NOS']
+concept[concept['concept_name'] == 'Neoplasm of uncertain behaviour of larynx']
 
 print(positive_dataset_matching.info())
 """
@@ -39,8 +40,8 @@ positive_dataset_matching["concept_id2"] = positive_dataset_matching["concept_id
 The NAN becomes <NA> which is a pandas specific type for missing values
 will this cause problem?
 if cause problem, can use .fillna(-1) to fill the missing values
+pandas.isna() will cause problem? 
 """
-
 
 iterable_matching = MatchingIterableDataset(
     positive_dataset_matching,
@@ -49,55 +50,10 @@ iterable_matching = MatchingIterableDataset(
     seed=42
 )
 
+it = iter(iterable_matching)
+next(it)
 
 
-# no mismatch between id and name
-output_file = "mismatches.txt"
-with open(output_file, "w") as f:
-    f.write("Mismatched Sentences & Concept IDs\n")
-    f.write("=" * 50 + "\n")
-    for sample in tqdm(iterable_matching, desc="Checking dataset", unit="sample"):
-        sentence1 = sample["sentence1"]
-        sentence1 = sentence1[11:]
-        sentence2 = sample["sentence2"]
-        concept_id1 = sample["concept_id1"]
-        concept_id2 = sample["concept_id2"]
-        clean_sentence2 = sentence2[11:]
-        expected_sentence1 = concept_dict.get(concept_id1, None)
-        expected_sentence2 = concept_dict.get(concept_id2, None)
-        mismatch_found = False  
-        if expected_sentence1 and sentence1 != expected_sentence1:
-            mismatch_found = True
-            mismatch_info = (
-                f"Mismatch! sentence1 does not match concept_id1:\n"
-                f"  - Found: '{sentence1}'\n"
-                f"  - Expected: '{expected_sentence1}'\n"
-                f"  - Concept ID: {concept_id1}\n"
-                f"{'-' * 50}\n"
-            )
-            f.write(mismatch_info) 
-        if expected_sentence2 and clean_sentence2 != expected_sentence2:
-            mismatch_found = True
-            mismatch_info = (
-                f"Mismatch! sentence2 does not match concept_id2:\n"
-                f"  - Found: '{clean_sentence2}'\n"
-                f"  - Expected: '{expected_sentence2}'\n"
-                f"  - Concept ID: {concept_id2}\n"
-                f"{'-' * 50}\n"
-            )
-            f.write(mismatch_info)
-    if mismatch_found:
-        print(f"Mismatches found and saved to {output_file}!")
-    else:
-        print("\nNo mismatches found!")
-
-
-
-blacklist = (
-    positive_dataset_matching.groupby("concept_id1")["concept_id2"]
-    .apply(lambda x: {int(v) if pd.notna(v) else None for v in x})  # Convert NaNs to None
-    .to_dict()
-)
 print(positive_dataset_matching.iloc[1000])
 """
 sentence1      Condition: Neoplasm, benign of hematopoietic s...
@@ -108,69 +64,78 @@ label                                                          1
 source                                               nonstd_name
 """
 
-## Check sample size
-# label0= 0
-# label1= 0
-# for it in tqdm(iterable_matching):
-#     ## TODO: check if concept_id matchs concept name
-#     # no mismatch
-#     sentence1 = it['sentence1']
-#     concept_id1 = it['concept_id1']
-#     sentence2 = it['sentence2']
-#     concept_id2 = it['concept_id2']
-#     label = it['label']
-#     bl = blacklist.get(concept_id1)
-#     ## check if sentence2 has a [MATCHING] label in the beginning
-#     assert sentence2.startswith("[MATCHING]")
-#     sentence2 = sentence2[11:]
-    
-#     if label == 1:
-#         if concept_id2 is None and not bl:
-#             pass
-#         elif concept_id2 not in bl:
-#             print(f"sentence1: {sentence1}")
-#             print(f"concept_id1: {concept_id1}")    
-#             print(f"sentence2: {sentence2}")
-#             print(f"concept_id2: {concept_id2}")
-#             print("*"*50)
-#             print(bl)
-#             print(f"\n {label}")
-#             raise AssertionError(f"sentence2 '{sentence2}' is not in blacklist for sentence1 '{sentence1}'")
-#         label1 += 1
-#     else:
-#         # false 
-#         if concept_id2 is None and not bl:
-#             pass
-#         elif concept_id2 in bl:
-#             print(f"sentence1: {sentence1}")
-#             print(f"concept_id1: {concept_id1}")
-#             print(f"sentence2: {sentence2}")
-#             print(f"concept_id2: {concept_id2}")
-#             print("*"*50)
-#             print(bl)
-#             print(f"\n {label}")
-#             raise AssertionError(f"sentence2 '{sentence2}' is in blacklist for sentence1 '{sentence1}'")        
-#         label0 += 1
 
-label0 = 0
+concept_dict = concept.set_index("concept_id")["concept_name"].to_dict()
+
+# Create a blacklist of sentences for each concept_id
+blacklist = (
+    positive_dataset_matching.groupby("concept_id1")["sentence2"]
+    .apply(lambda x: set(x.dropna())) 
+    .to_dict()
+)
+
+# Create a dictionary of sentences to concept_ids, also store the sentence2 with multiple concept_id1s
+sentence_to_ids = positive_dataset_matching.groupby('sentence2')["concept_id1"].agg(set)
+
+
+"""
+Function to check if the label is valid for a given item
+associated_ids: set of concept_ids associated with the sentence
+is_in_blacklist: boolean, True if the sentence is in the blacklist
+is_in_multiple_ids: boolean, True if the sentence has multiple concept_ids
+label: int, label value
+"""
+def check_label_validity(item, label):
+    sentence = item["sentence2"][11:]
+    concept_id = item["concept_id1"]
+    associated_ids = sentence_to_ids.get(sentence, set())
+    is_in_blacklist = sentence in blacklist.get(concept_id, set())
+    is_in_multiple_ids = len(associated_ids) > 1
+    if label == 1:
+        return is_in_blacklist  # Label 1 is valid if in blacklist
+    elif label == 0:
+        return is_in_multiple_ids or not is_in_blacklist  # Label 0 validity check
+    return False
+
+
+# Check the validity of the labels
+incorrect_label_1 = 0
+incorrect_label_0 = 0
 label1 = 0
-
-for it in tqdm(iterable_matching, desc="Checking dataset", unit="sample"):
+label0 = 0
+for it in tqdm(iterable_matching):    
     sentence1 = it["sentence1"]
     concept_id1 = it["concept_id1"]
     sentence2 = it["sentence2"]
     concept_id2 = it["concept_id2"]
+    expected_sentence1 = concept_dict.get(concept_id1, None)
+    expected_sentence2 = concept_dict.get(concept_id2, None)
+    assert sentence2.startswith("[MATCHING]")
+    cleaned_sentence1 = sentence1[11:]
+    cleaned_sentence2 = sentence2[11:]
+    assert(cleaned_sentence1 == expected_sentence1), f"concept_id1 does not match concept name: {sentence1} != {expected_sentence1}, {concept_id1}"
+    # there are cases that concept_id2 is None, so skip the check with these cases 
+    if concept_id2 is not None:
+        assert(cleaned_sentence2 == expected_sentence2), f"concept_id2 does not match concept name: {sentence2} != {expected_sentence2}, {concept_id1}, {sentence1}, {concept_id2}"
     label = it["label"]
-    bl = blacklist.get(concept_id1)
-    assert sentence2.startswith("[MATCHING]"), f"sentence2 does not start with [MATCHING]: {sentence2}"
-    sentence2 = sentence2[11:]  # Remove "[MATCHING] " prefix
+    # check if the label is valid
+    is_valid = check_label_validity(it, label)
     if label == 1:
-        assert concept_id2 in bl
         label1 += 1
-    else:
-        assert concept_id2 not in bl
-        label0 += 1
+        if not is_valid:
+            incorrect_label_1 += 1
+    elif label == 0:
+        label0 += 1 
+        if not is_valid:
+            incorrect_label_0 += 1
+        
+    
+# Print separate incorrect counts
+print(f"Total incorrect label=1 cases: {incorrect_label_1}")
+print(f"Total incorrect label=0 cases: {incorrect_label_0}")
+print(f"Total incorrect labels: {incorrect_label_0 + incorrect_label_1}")     
+# Total incorrect labels: 0
 
 
-label0
-label1
+label0 #2702248 = 675562 * 4
+label1 #675562
