@@ -173,3 +173,6 @@ tmp_trainer
 tmp
 
 wandb/*
+
+output/*
+scripts/test.py
