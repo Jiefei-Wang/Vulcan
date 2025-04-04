@@ -14,7 +14,7 @@ from sentence_transformers.training_args import SentenceTransformerTrainingArgum
 from datasets import Dataset
 from modules.ML_data import get_matching, get_relation, get_matching_validation,get_relation_positive_validation, DictBatchSampler
 from sentence_transformers.evaluation import BinaryClassificationEvaluator
-from modules.ML_train import get_base_model, auto_save_model
+from modules.ML_train import get_base_model, auto_save_model, save_best_model
 
 ## disable default huggingface logging
 logging.getLogger("transformers").setLevel(logging.WARNING)  # Or logging.ERROR
@@ -145,15 +145,26 @@ iterations = sampler.iteration_size()
 
 iterations_per_epoch = max(iterations.values())
 epoch_num = 5
-for i in range(epoch_num):
-    if i!=0:
+best_eval_loss = float('inf')
+
+j = 0
+for ds_train in sampler:
+    epoch_i = j // iterations_per_epoch
+    if epoch_i!=0:
         trainer.args.warmup_ratio = 0.0
-    j = 0
-    for ds_train in sampler:
-        j += 1
-        print(f"Epoch {i+1}/{epoch_num}, Iteration {j}/{iterations_per_epoch}")
-        trainer.train_dataset = ds_train
-        trainer.train()
-        auto_save_model(model, tokenizer, output_dir, max_saves=max_saves)
+    if epoch_i >= epoch_num:
+        break
+    print(f"Epoch {epoch_i+1}/{epoch_num}, Iteration {j}/{iterations_per_epoch}")
+    trainer.train_dataset = ds_train
+    trainer.train()
+    trainer.state
+    auto_save_model(model, tokenizer, output_dir, max_saves=max_saves)
+    eval_results = trainer.evaluate()
+    if eval_results['eval_loss'] < best_eval_loss:
+        best_eval_loss = eval_results['eval_loss']
+        save_best_model(model, tokenizer, output_dir)
+    j += 1
+        
+        
 
 # auto_load_model(output_dir)

@@ -1,14 +1,10 @@
-
-from sentence_transformers import SentenceTransformer
 import os
 import datetime
 import shutil
 import re
 
-import os
-import re
-import shutil
-from transformers import AutoTokenizer # Assuming you are using Transformers library
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer
 
 
 
@@ -33,6 +29,31 @@ def get_base_model(base_model, special_tokens):
     return model, tokenizer
 
 
+def get_model_indices(path):
+    """
+    Get the indices of saved models in the specified path.
+
+    Args:
+        path (str): The path to the folder where models are saved.
+
+    Returns:
+        list: A list of indices of saved models.
+    """
+    saved_models = [f for f in os.listdir(path) if f.startswith("auto_save_")]
+    indices = []
+    for filename in saved_models:
+        match = re.match(r"auto_save_(\d+)_", filename)  # Use regex to extract the index
+        if match:
+            try:
+                indices.append(int(match.group(1)))
+            except ValueError:
+                pass
+            
+    # Sort indices and its corresponding filenames
+    filenames = [x for _, x in sorted(zip(indices, saved_models))]
+    indices = sorted(indices)
+    return indices, filenames
+
 def auto_save_model(model, tokenizer, save_folder, max_saves):
     """
     Automatically saves the model and tokenizer to a folder with a patterned name,
@@ -55,25 +76,11 @@ def auto_save_model(model, tokenizer, save_folder, max_saves):
             print(f"Error creating save folder: {e}")
             return -1  # Indicate error
 
-    # Determine the next available save index
-    saved_models = [f for f in os.listdir(save_folder) if f.startswith("auto_save_")]
-    if not saved_models:
-        current_save_index = 1  # Start at 1 if no models exist
+    model_indices, _ = get_model_indices(save_folder)
+    if not model_indices:
+        current_save_index = 1
     else:
-        # Extract indices and find the next available one
-        indices = []
-        for filename in saved_models:
-            match = re.match(r"auto_save_(\d+)_", filename)  # Use regex to extract the index
-            if match:
-                try:
-                    indices.append(int(match.group(1)))
-                except ValueError:
-                    print(f"Warning: Could not parse index from filename: {filename}")
-
-        if not indices:
-            current_save_index = 1
-        else:
-            current_save_index = max(indices) + 1  # Next available index
+        current_save_index = max(model_indices) + 1  # Next available index
 
     save_name = f"auto_save_{current_save_index}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
     save_path = os.path.join(save_folder, save_name)
@@ -89,18 +96,27 @@ def auto_save_model(model, tokenizer, save_folder, max_saves):
         return -1  # Indicate error
 
     # Manage the number of saved models
-    saved_models = sorted([f for f in os.listdir(save_folder) if f.startswith("auto_save_")])
+    
+    model_indices, file_names = get_model_indices(save_folder)
 
-    if len(saved_models) > max_saves:
-        oldest_model = saved_models[0]  # Assumes oldest based on filename sorting
-        oldest_model_path = os.path.join(save_folder, oldest_model)
+    while len(model_indices) > max_saves:
+        model_indices, file_names = get_model_indices(save_folder)
+        file_name = file_names[0]  # oldest based on filename index
+        oldest_model_path = os.path.join(save_folder, file_name)
         try:
             shutil.rmtree(oldest_model_path)
             print(f"Deleted oldest model: {oldest_model_path}")
         except Exception as e:
             print(f"Error deleting oldest model {oldest_model_path}: {e}")
 
-    return current_save_index + 1
+    return current_save_index
+
+def save_best_model(model, tokenizer, save_folder):
+    save_path = os.path.join(save_folder, "best_model")
+    model.save(save_path)  # Assuming model has a save method
+    tokenizer.save_pretrained(save_path)  # Save tokenizer as well
+    
+
 
 
 def auto_load_model(save_folder):
