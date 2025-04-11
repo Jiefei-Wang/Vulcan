@@ -28,15 +28,17 @@
 #
 # Iterable Class: params: Number of negative samples
 # 
+# Note:
+# - Standard concepts will include all concepts, regardless of whether they are reserved or not.
+# - Non-standard concepts will only include non-standard concepts that are not reserved.
 import os
 import pandas as pd
 import numpy as np
 from modules.ML_sampling import generate_matching_positive_samples, get_filtered_concept_ancestor,\
     generate_relation_positive_samples, get_sentence_name,\
-    add_special_token_df, OffspringIterableDataset, AncestorIterableDataset, MatchingIterableDataset, add_special_token, get_blacklist_map,\
+    OffspringIterableDataset, AncestorIterableDataset, MatchingIterableDataset, add_special_token, get_blacklist_map,\
     combine_columns,remove_reserved,replace_std_concept_with_reserved
-from datasets import Dataset
-import pyarrow.feather as feather
+
 
 # relaod kernel to get the latest version of the modules
 # Code has been moved to scripts/reload_library.py
@@ -47,26 +49,36 @@ import pyarrow.feather as feather
 concept = pd.read_feather('data/omop_feather/concept.feather')
 concept_relationship = pd.read_feather('data/omop_feather/concept_relationship.feather')
 concept_ancestor = pd.read_feather('data/omop_feather/concept_ancestor.feather')
+conceptML = pd.read_feather('data/ML/conceptML.feather')
 
 
-conceptML = pd.read_feather('data/ML/conceptML1.feather')
+conceptML.columns
+# ['concept_id', 'concept_name', 'domain_id', 'vocabulary_id',
+#        'concept_code', 'nonstd_name', 'nonstd_concept_id', 'synonym_name',
+#        'description']
+
 
 reserved_vocab = "CIEL"
 
 
 ## Define the target standard concepts
-std_target = conceptML[(conceptML['domain_id'] == 'Condition')& (conceptML['vocabulary_id'] != reserved_vocab)].reset_index(drop=True)
+## Reserved concepts are also in the target concepts!
+std_target = conceptML[conceptML['domain_id'] == 'Condition'].reset_index(drop=True)
 std_target['std_name'] = get_sentence_name(std_target['domain_id'], std_target['concept_name'])
+
 print(len(std_target))   # 160288
 print(std_target.columns)
 # ['concept_id', 'concept_name', 'domain_id', 'vocabulary_id',
 #        'concept_code', 'nonstd_name', 'nonstd_concept_id', 'synonym_name',
-#        'descriptions', 'std_name']
+#        'description', 'std_name']
 
-## For some reserved vocab, they are not standard concepts
-reserved_concepts = concept[(concept.domain_id=="Condition")&(concept.vocabulary_id == reserved_vocab)]
+
+
+## exclude the reserved vocab from non-std list 
+## The reserved concepts can be from any domain
+reserved_concepts = concept[(concept.standard_concept != 'S')&(concept.vocabulary_id == reserved_vocab)]
 reserved_concept_ids = set(reserved_concepts.concept_id.to_list())
-
+len(reserved_concept_ids) # 50881
 
 ## remove reserved concepts from 'nonstd_name', 'nonstd_concept_id' list
 std_target[['nonstd_concept_id', 'nonstd_name']] = std_target.apply(
@@ -79,18 +91,21 @@ std_target[['nonstd_concept_id', 'nonstd_name']] = std_target.apply(
 ## combine list of nonstd_name, synonym_name, and descriptions into a single column
 std_target_for_matching = std_target.copy()
 std_target_for_matching["all_nonstd"] = combine_columns(
-    std_target_for_matching[["nonstd_name", "synonym_name", "descriptions"]])
+    std_target_for_matching[["nonstd_name", "synonym_name", "description"]])
 
+std_target_for_matching["all_nonstd_concept_id"] = std_target_for_matching.apply(
+    lambda x: x["nonstd_concept_id"] + [np.nan] * (len(x["all_nonstd"]) - len(x["nonstd_concept_id"])),
+    axis=1
+)
 
 
 ## filter out rows with no non-standard names
 print(len(std_target_for_matching))  # 160288
 print(std_target_for_matching.columns)
 """
-Index(['concept_id', 'concept_name', 'domain_id', 'vocabulary_id',
+['concept_id', 'concept_name', 'domain_id', 'vocabulary_id',
        'concept_code', 'nonstd_name', 'nonstd_concept_id', 'synonym_name',
-       'descriptions', 'std_name', 'all_nonstd'],
-      dtype='object')
+       'description', 'sentence', 'all_nonstd']
 """
 
 # Create positive samples test

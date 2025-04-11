@@ -7,13 +7,16 @@ import numpy as np
 
 
 def remove_reserved(row, reserved_ids):
-    nonstd_concept_id = row['nonstd_concept_id']
-    nonstd_name = row['nonstd_name']
-    if nonstd_concept_id is None:
-        return None, None
-    nonstd_name = [x for i, x in enumerate(nonstd_name) if nonstd_concept_id[i] not in reserved_ids]
-    nonstd_concept_id = [x for x in nonstd_concept_id if x not in reserved_ids]
-    return nonstd_concept_id, nonstd_name
+    nonstd_ids = row['nonstd_concept_id']
+    nonstd_names = row['nonstd_name']
+    filtered = [(cid, name) for cid, name in zip(nonstd_ids, nonstd_names) if cid not in reserved_ids]
+
+    # Unzip the filtered list if it's not empty, else assign empty lists
+    if filtered:
+        filtered_ids, filtered_names = zip(*filtered)
+    else:
+        filtered_ids, filtered_names = [], []
+    return filtered_ids, filtered_names
 
 
 def get_sentence_name(domain_id, concept_name):
@@ -102,7 +105,8 @@ def generate_matching_positive_samples(df, columns, column_ids):
         pd.DataFrame: A processed dataset with exploded rows and additional metadata.
     """
     df = df[df['all_nonstd'].str.len() > 0].reset_index()
-
+    
+    
     column_keep = ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label', 'source']
     result_frames = []
     for idx in range(len(columns)):
@@ -468,11 +472,6 @@ def add_special_token(x, token):
     x = token + " " + x
     return x
 
-
-def add_special_token_df(df, token):
-    df['sentence1'] = add_special_token(df['sentence1'], token)
-    df['sentence2'] = add_special_token(df['sentence2'], token)
-    return df
 
 # get_blacklist_map(target_standard_ids, candidate_df, positive_df)
 # positive_ids = target_standard_ids

@@ -2,22 +2,20 @@
 # standard to non-standard concepts
 #
 # For each standard concept, create columns:
-# - nonstd_ids: list of non-standard concept ids
-# - nonstd_names: list of non-standard concept names (size = nonstd_id)
-# - descriptions: list of concept descriptions (from UMLS)
-# - synonym_names: list of concept synonyms (if no synonym, then empty list)
-# If a value in a column is empty, it must be None
+# - nonstd_concept_id: list of non-standard concept ids
+# - nonstd_name: list of non-standard concept names (size = nonstd_id)
+# - description: list of concept descriptions (from UMLS)
+# - synonym_name: list of concept synonyms (if no synonym, then empty list)
+# If a value in a column is empty, it must be an empty list
 # 
 # Store the result in data/ML/conceptML.feather
 import importlib
 import modules
 from tqdm import tqdm
 import pandas as pd
+import numpy as np
 from modules.ML_extract_name import extract_nonstd_names, extract_synonym, extract_umls_description
 from modules.UMLS_file import read_mrconso, read_mrdef
-
-# Reload the custom module to ensure latest version of functions are used
-importlib.reload(modules.ML_extract_name)
 
 
 # Load OMOP CDM concept tables from feather files
@@ -111,9 +109,26 @@ conceptML = pd.merge(
     on = 'concept_id',
     how = 'left'
 ).rename(columns={
-    'umls_desc': 'descriptions',
+    'umls_desc': 'description',
     'concept_synonym_name': 'synonym_name'}
 )
+
+## replace None with empty list
+cols = ['nonstd_name', 'nonstd_concept_id','synonym_name', 'description']
+for i in cols:
+    conceptML[i] = conceptML[i].apply(lambda x: [] if x is None or x is np.NaN else x)
+
+
+## Exclude names that are in previous columns
+cols = ['nonstd_name', 'synonym_name', 'description']
+for i, col in enumerate(cols):
+    if i > 0:  # Skip the first column as there are no previous columns
+        for prev_col in cols[:i]:
+            print(f"processing {i}th column: {col} and previous column: {prev_col}")
+            conceptML[col] = conceptML.apply(
+                lambda x: [name for name in x[col] if name not in x[prev_col]], 
+                axis=1
+            )
 
 
 ## combine all names into one
@@ -121,7 +136,20 @@ conceptML = pd.merge(
 # conceptML1 = conceptML.copy()  
 # conceptML1['text'] = conceptML1[columns_combine].apply(lambda x: [i for k in x if isinstance(k, list) for i in k], axis=1)
 
+conceptML.dtypes
+# domain_id            object
+# vocabulary_id        object
+# concept_code         object
+# nonstd_name          object
+# nonstd_concept_id    object
+# synonym_name         object
+# description          object
+
+conceptML
+
+
 # Save the final concept mapping table
-conceptML.to_feather('data/ML/conceptML1.feather')
+conceptML.to_feather('data/ML/conceptML.feather')
+
 
 
