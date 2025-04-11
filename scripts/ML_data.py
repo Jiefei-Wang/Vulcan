@@ -131,25 +131,35 @@ for i, col in enumerate(cols):
             )
 
 
+# conceptML = pd.read_feather('data/ML/ML_data/conceptML.feather')
 ## combine all names into one
-# columns_combine = ['nonstd_name', 'concept_synonym_name', 'umls_desc']
-# conceptML1 = conceptML.copy()  
-# conceptML1['text'] = conceptML1[columns_combine].apply(lambda x: [i for k in x if isinstance(k, list) for i in k], axis=1)
+columns_combine =  ['nonstd_name', 'synonym_name', 'description']
+conceptML['all_nonstd_name'] = conceptML[columns_combine].apply(lambda x: [i for k in x for i in k], axis=1)
 
-conceptML.dtypes
-# domain_id            object
-# vocabulary_id        object
-# concept_code         object
-# nonstd_name          object
-# nonstd_concept_id    object
-# synonym_name         object
-# description          object
-
-conceptML
+conceptML["all_nonstd_concept_id"] = conceptML.apply(
+    lambda x: list(x["nonstd_concept_id"]) + [np.nan] * (len(x["all_nonstd_name"]) - len(x["nonstd_concept_id"])),
+    axis=1
+)
+conceptML["nonstd_concept_id"]
+conceptML["all_nonstd_concept_id"]
 
 
+# conceptML.columns
+# conceptML1 = conceptML[['all_nonstd_concept_id', 'all_nonstd_name']].copy()
+# conceptML2 = conceptML1[0:10000].copy()
+
+
+# conceptML1.to_feather('foo.feather')
+
+# Convert data types as specified
+conceptML['concept_id'] = conceptML['concept_id'].astype('Int64') 
+conceptML['concept_name'] = conceptML['concept_name'].astype('string') 
+conceptML['domain_id'] = conceptML['domain_id'].astype('category')
+conceptML['vocabulary_id'] = conceptML['vocabulary_id'].astype('category')
+conceptML['concept_code'] = conceptML['concept_code'].astype('string')
+
+
+
+print("Saving conceptML")
 # Save the final concept mapping table
-conceptML.to_feather('data/ML/conceptML.feather')
-
-
-
+conceptML.to_feather('data/ML/ML_data/conceptML.feather')

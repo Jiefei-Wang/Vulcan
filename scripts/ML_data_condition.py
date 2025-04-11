@@ -40,6 +40,7 @@ from modules.ML_sampling import generate_matching_positive_samples, get_filtered
     combine_columns,remove_reserved,replace_std_concept_with_reserved
 
 
+
 # relaod kernel to get the latest version of the modules
 # Code has been moved to scripts/reload_library.py
 
@@ -85,28 +86,28 @@ std_target[['nonstd_concept_id', 'nonstd_name']] = std_target.apply(
     lambda x: remove_reserved(x, reserved_concept_ids), axis=1, result_type='expand'
 )
 
-##########################################
-## Direct sentence  matching
-##########################################
-## combine list of nonstd_name, synonym_name, and descriptions into a single column
-std_target_for_matching = std_target.copy()
-std_target_for_matching["all_nonstd"] = combine_columns(
-    std_target_for_matching[["nonstd_name", "synonym_name", "description"]])
+## combine all names into one
+columns_combine =  ['nonstd_name', 'synonym_name', 'description']
+std_target['all_nonstd_name'] = std_target[columns_combine].apply(lambda x: [k for k in x for i in k], axis=1)
 
-std_target_for_matching["all_nonstd_concept_id"] = std_target_for_matching.apply(
-    lambda x: x["nonstd_concept_id"] + [np.nan] * (len(x["all_nonstd"]) - len(x["nonstd_concept_id"])),
+std_target["all_nonstd_concept_id"] = std_target.apply(
+    lambda x: x["nonstd_concept_id"] + [np.nan] * (len(x["all_nonstd_name"]) - len(x["nonstd_concept_id"])),
     axis=1
 )
 
-
-## filter out rows with no non-standard names
-print(len(std_target_for_matching))  # 160288
-print(std_target_for_matching.columns)
+print(len(std_target))  # 160288
+print(std_target.columns)
 """
 ['concept_id', 'concept_name', 'domain_id', 'vocabulary_id',
        'concept_code', 'nonstd_name', 'nonstd_concept_id', 'synonym_name',
        'description', 'sentence', 'all_nonstd']
 """
+
+##########################################
+## Direct sentence  matching
+##########################################
+
+
 
 # Create positive samples test
 positive_dataset_matching = generate_matching_positive_samples(
