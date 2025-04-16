@@ -3,9 +3,7 @@ os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
 
 import torch
 import pandas as pd
-import numpy as np
 from datetime import datetime
-from math import ceil
 import logging
 import wandb
 # from transformers import AutoTokenizer, AutoModel
@@ -14,7 +12,10 @@ from sentence_transformers.training_args import SentenceTransformerTrainingArgum
 from datasets import Dataset
 from modules.ML_data import get_matching, get_relation, get_matching_validation,get_relation_positive_validation, DictBatchSampler
 from sentence_transformers.evaluation import BinaryClassificationEvaluator
-from modules.ML_train import get_base_model, auto_save_model, save_best_model
+from modules.ML_train import get_base_model, auto_save_model, save_best_model, CustomEvaluator
+from modules.TOKENS import TOKENS
+
+
 
 ## disable default huggingface logging
 logging.getLogger("transformers").setLevel(logging.WARNING)  # Or logging.ERROR
@@ -30,51 +31,50 @@ base_model_path = f'models/{base_model}'
 # base_model = 'models/base_exclude_CIEL/checkpoint-65000'
 output_dir = f"output/{base_model}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 
-special_tokens = ['[MATCHING]', '[OFFSPRINT]', '[ANCESTOR]']
+special_tokens = [TOKENS.child]
 ## what datasets to use?
-ds_names = ['matching', 'offspring', 'ancestor']
+ds_names = ['matching', 'ancestor']
 
 ## columns to use
 cols = ['sentence1', 'sentence2', 'label']
 
 
-n_neg_matching = 10
-n_neg_relation = 10
+n_neg_matching = 50
+n_neg_relation = 50
+n_fp_matching = 50
 dt_seed = 42
 data_folder = 'data/ML'
-iterable_matching = get_matching(data_folder, n_neg=n_neg_matching, seed=dt_seed)
+iterable_matching = get_matching(data_folder, n_neg=n_neg_matching, seed=dt_seed, n_fp=n_fp_matching)
 iterable_offspring, iterable_ancestor = get_relation(data_folder, n_neg = n_neg_relation, seed=dt_seed)
-iterable_matching_validation = get_matching_validation(data_folder, seed=dt_seed)
-offspring_validation,ancestor_validation = get_relation_positive_validation(data_folder)
+
+reserved_concepts = pd.read_feather("data/ML/base_data/reserved_concepts.feather")
+reserved_concepts.columns
+
+nonstd_conditions = reserved_concepts[reserved_concepts['domain_id'] != 'Condition']
 
 
-for example in iterable_matching.trainer_iter():
-    print(example)
-    break
+#################################
+## For validation
+#################################
+conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
+conditions = conceptEX[conceptEX['domain_id'] == 'Condition']
+std_conditions = conditions[conditions['standard_concept'] == 'S']
+nonstd_conditions = conditions[conditions['standard_concept'] != 'S']
 
-
-## get the first valid_size rows for validation
 valid_size = 1000
-it = iterable_matching_validation.trainer_iter()
-matching_validation_pd = pd.DataFrame([next(it) for i in range(valid_size)])
+matching_validation_pd = nonstd_conditions.sample(valid_size, random_state=dt_seed)
 
-matching_validation_ds = Dataset.from_pandas(matching_validation_pd[cols])
-offspring_validation_ds = Dataset.from_pandas(offspring_validation[cols].sample(valid_size, random_state=42))
-ancestor_validation_ds = Dataset.from_pandas(ancestor_validation[cols].sample(valid_size, random_state=42))
+
+database = std_conditions[['concept_id', 'concept_name']]
+query = nonstd_conditions[['concept_id', 'concept_name', 'std_concept_id']][nonstd_conditions['vocabulary_id'] == 'CIEL']
+
+
+
+evaluator = CustomEvaluator(reference=database, query=query, n_results=100)
+
 
 
 model, tokenizer = get_base_model(base_model_path, special_tokens)
-
-
-matching_validation_ds.reset_format()
-# Initialize the evaluator
-dev_evaluator1 = BinaryClassificationEvaluator(
-    sentences1=matching_validation_ds["sentence1"],
-    sentences2=matching_validation_ds["sentence2"],
-    labels=matching_validation_ds["label"],
-    name="matching_eval",
-)
-dev_evaluator1(model)
 
 train_loss = losses.ContrastiveLoss(model=model)
 
@@ -112,12 +112,6 @@ train_dataset = {
 }
 train_dataset = {k: train_dataset[k] for k in ds_names}
 
-validation_dataset = {
-    'matching': matching_validation_ds,
-    'offspring': offspring_validation_ds,
-    'ancestor': ancestor_validation_ds
-}
-
 
 print(train_dataset)
 print(validation_dataset)
@@ -154,8 +148,13 @@ for ds_train in sampler:
         trainer.args.warmup_ratio = 0.0
     if epoch_i >= epoch_num:
         break
+    ## How many iterations per evaluation?
+    evaluator.build_reference(model=model)
+    
     print(f"Epoch {epoch_i+1}/{epoch_num}, Iteration {j}/{iterations_per_epoch}")
     trainer.train_dataset = ds_train
+    
+    
     trainer.train()
     trainer.state
     auto_save_model(model, tokenizer, output_dir, max_saves=max_saves)

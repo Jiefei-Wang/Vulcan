@@ -8,25 +8,28 @@ from datasets import IterableDataset, Dataset
 from tqdm import tqdm
 
 
-def get_matching(data_folder, n_neg=4, seed=42):
-    positive_dataset_matching = pd.read_feather(
-        os.path.join(data_folder, 'matching/positive_dataset_matching.feather')
+def get_matching(data_folder, n_neg=4, seed=42, n_fp = 0):
+    positive_df_matching = pd.read_feather(
+        os.path.join(data_folder, 'matching/positive_df_matching.feather')
         )
     candidate_df_matching = pd.read_feather(
-        os.path.join(data_folder, 'matching/candidate_dataset_matching.feather')
+        os.path.join(data_folder, 'matching/candidate_df_matching.feather')
         )
     
-    candidate_fp = pd.read_feather(
-        os.path.join(data_folder, 'matching/candidate_fp.feather')
-        )
-    
+    if n_fp > 0:
+        candidate_fp_matching = pd.read_feather(
+            os.path.join(data_folder, 'matching/candidate_fp_matching.feather')
+            )
+    else:
+        candidate_fp_matching = None
 
     iterable_matching = MatchingIterableDataset(
-        positive_df_matching = positive_dataset_matching,
+        positive_df_matching = positive_df_matching,
         candidate_df_matching = candidate_df_matching,
-        candidate_fp_matching = candidate_fp,
+        candidate_fp_matching = candidate_fp_matching,
         n_neg=n_neg,  
-        seed=seed
+        seed=seed,
+        n_fp = n_fp
     )
     
     return iterable_matching
@@ -39,7 +42,6 @@ def get_relation(data_folder, n_neg=4, seed=42):
     std_target = pd.read_feather(
         os.path.join(data_folder, 'relation/std_target.feather')
         )
-    
     
     
     iterable_offspring = OffspringIterableDataset(
@@ -123,7 +125,7 @@ def cycle_from_generator(generator_func):
 
 
 class DictBatchSampler:
-    def __init__(self, datasets_dict, batch_size, ratios=None, shuffle = True, seed=42, shuffle_buffer=8*1024):
+    def __init__(self, datasets_dict, batch_size, ratios=None, shuffle = True, seed=42, shuffle_buffer=8*1024, train = True):
         """
         datasets_dict: dict of {'name': IterableDataset}
         batch_size: total number of samples per batch
@@ -136,7 +138,10 @@ class DictBatchSampler:
         self.names = list(datasets_dict.keys())
 
         # Use cycle() to avoid frequent StopIteration handling
-        self.cyncled_iter = {k: cycle_from_generator(v.trainer_iter) for k, v in self.datasets_dict.items()}
+        if train:
+            self.cyncled_iter = {k: cycle_from_generator(v.trainer_iter) for k, v in self.datasets_dict.items()}
+        else:
+            self.cyncled_iter = {k: cycle_from_generator(v.__iter__) for k, v in self.datasets_dict.items()}
         
         if shuffle:
             self.shuffled_iter = {k:buffered_shuffle(self.rng, v, shuffle_buffer) for k, v in self.cyncled_iter.items()}

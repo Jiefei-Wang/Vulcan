@@ -7,11 +7,11 @@ importlib.reload(modules.ML_data)
 importlib.reload(modules.ChromaVecDB)
 
 
-def load_lib(libPath):
-    with open(libPath) as f:
-        exec(f.read(), globals())
+# def load_lib(libPath):
+#     with open(libPath) as f:
+#         exec(f.read(), globals())
 
-load_lib('modules/ML_sampling.py')
-load_lib('modules/ML_data.py')
-load_lib('modules/ChromaVecDB.py')
+# load_lib('modules/ML_sampling.py')
+# load_lib('modules/ML_data.py')
+# load_lib('modules/ChromaVecDB.py')
 

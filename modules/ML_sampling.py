@@ -243,7 +243,8 @@ class GenericIterableDataset():
                 'sentence2': self.pos_sentences2[idx],
                 'concept_id1': self.pos_concept_id1[idx],
                 'concept_id2': self.pos_concept_id2[idx],
-                'label': 1
+                'label': 1,
+                'from': "positive"
             }
 
             # 2. yield negative sampling
@@ -270,7 +271,8 @@ class GenericIterableDataset():
                     'sentence2': self.candidate_concept_names[c_idx],
                     'concept_id1': cid1,
                     'concept_id2': self.candidate_concept_ids[c_idx],
-                    'label': 0
+                    'label': 0,
+                    "from": "negative"
                 }
                 
             # 3. Yield False Positives (if available and not already yielded for this cid1)
@@ -278,13 +280,14 @@ class GenericIterableDataset():
                 fp_records = self.fp_map[cid1]
                 for fp_record in fp_records:
                     yield {
-                        'sentence1': fp_record['sentence1'], # Use sentence1 from FP record
+                        'sentence1': fp_record['sentence1'],
                         'sentence2': fp_record['sentence2'],
-                        'concept_id1': cid1,                 # The matching concept_id1
+                        'concept_id1': cid1,                 
                         'concept_id2': fp_record['concept_id2'],
-                        'label': 0                          # False positives are labeled 0
+                        'label': 0,
+                        'from': "false_positive"                      
                     }
-                self.yielded_fp_ids.add(cid1) # Mark this concept_id1's FPs as yielded for this epoch
+                self.yielded_fp_ids.add(cid1) # Mark this cid1 as processed to avoid duplicates in future iterations
 
     def _calculate_length(self):
         """Calculates the exact total number of items the iterator will yield."""

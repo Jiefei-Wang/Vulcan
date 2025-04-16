@@ -2,11 +2,11 @@
 #  - `std_target` contains target concepts that everything will be mapped to
 #  - `reserved_concepts` is provided for the validation of the model
 
-
+import os
 import pandas as pd
 from modules.ML_sampling import get_sentence_name, remove_reserved
-from modules.timed_logger import logger
 import swifter
+from modules.timed_logger import logger
 logger.reset_timer()
 
 
@@ -30,7 +30,7 @@ std_target = conceptML[conceptML['domain_id'] == 'Condition'].reset_index(drop=T
 std_target['std_name'] = get_sentence_name(std_target['domain_id'], std_target['concept_name'])
 
 print(f"std concept #: {len(std_target)}")   # 160288
-print(std_target.columns)
+std_target.columns
 # ['concept_id', 'concept_name', 'domain_id', 'vocabulary_id',
 #        'concept_code', 'nonstd_name', 'nonstd_concept_id', 'synonym_name',
 #        'description', 'all_nonstd_name', 'all_nonstd_concept_id', 'source',
@@ -69,5 +69,13 @@ std_target[['all_nonstd_concept_id', 'all_nonstd_name', 'source']] = std_target.
 
 ## total number of non-standard concepts after removing reserved concepts
 print(f"nonstd # after removal: {total_nonstd(std_target)}") # 648802
+
+root = "data/ML/base_data"
+if not os.path.exists(root):
+    os.makedirs(root)
+
+std_target.to_feather(os.path.join(root, "std_target.feather"))
+reserved_concepts.to_feather(os.path.join(root, "reserved_concepts.feather"))
+
 
 logger.done()

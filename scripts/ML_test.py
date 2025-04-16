@@ -12,6 +12,7 @@ from sentence_transformers import SentenceTransformer
 from modules.ChromaVecDB import ChromaVecDB
 from modules.performance import map_concepts, performance_metrics
 from modules.ML_sampling import add_special_token
+from modules.TOKENS import TOKENS
 import json
 
 
@@ -22,7 +23,7 @@ base_model = 'all-MiniLM-L6-v2'
 base_model_path = f'models/{base_model}'
 trained_model_path = "output/all-MiniLM-L6-v2_2025-03-31_13-25-49/best_model"
 
-special_tokens = ['[MATCHING]', '[OFFSPRINT]', '[ANCESTOR]']
+special_tokens = [TOKENS.parent]
 
 
 model_base = SentenceTransformer(base_model_path)
@@ -36,12 +37,11 @@ model_train = SentenceTransformer(trained_model_path)
 
 # Read dataset
 conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
-concept_relationship = pd.read_feather('data/omop_feather/concept_relationship.feather')
-
 conditions = conceptEX[conceptEX['domain_id'] == 'Condition']
 
 std_conditions = conditions[conditions['standard_concept'] == 'S']
 nonstd_conditions = conditions[conditions['standard_concept'] != 'S']
+
 
 # conditions.columns
 # conditions.vocabulary_id.unique()
@@ -53,9 +53,10 @@ database = std_conditions[['concept_id', 'concept_name']]
 query = nonstd_conditions[['concept_id', 'concept_name', 'std_concept_id']][nonstd_conditions['vocabulary_id'] == 'CIEL']
 
 
-query_match = query.copy()
-query_match['concept_name'] = add_special_token(query_match['concept_name'], '[MATCHING]')
 
+evaluator = CustomEvaluator(reference=database, query=query, n_results=100)
+evaluator.build_reference(model=model_train)
+evaluator.evaluate(model=model_train)
 
 
 
