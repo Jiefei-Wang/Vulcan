@@ -16,10 +16,15 @@ def get_matching(data_folder, n_neg=4, seed=42):
         os.path.join(data_folder, 'matching/candidate_dataset_matching.feather')
         )
     
+    candidate_fp = pd.read_feather(
+        os.path.join(data_folder, 'matching/candidate_fp.feather')
+        )
+    
 
     iterable_matching = MatchingIterableDataset(
-        positive_dataset_matching,
-        candidate_df_matching,
+        positive_df_matching = positive_dataset_matching,
+        candidate_df_matching = candidate_df_matching,
+        candidate_fp_matching = candidate_fp,
         n_neg=n_neg,  
         seed=seed
     )

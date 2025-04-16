@@ -1,4 +1,4 @@
-from typing import Dict, Iterator, Union
+from typing import Dict, Iterator, Union, Optional, Set
 import pandas as pd
 import random
 from tqdm import tqdm
@@ -6,9 +6,9 @@ import torch
 import numpy as np
 
 
-def remove_reserved(row, reserved_ids):
-    nonstd_ids = row['nonstd_concept_id']
-    nonstd_names = row['nonstd_name']
+def remove_reserved(row, reserved_ids, id_col, name_col):
+    nonstd_ids = row[id_col]
+    nonstd_names = row[name_col]
     filtered = [(cid, name) for cid, name in zip(nonstd_ids, nonstd_names) if cid not in reserved_ids]
 
     # Unzip the filtered list if it's not empty, else assign empty lists
@@ -88,119 +88,62 @@ def create_relation_maps(concept_ancestor):
     return relation_maps
 
 
-
-# df = std_target_for_matching.copy()
-# columns = ['nonstd_name', 'synonym_name', 'descriptions']
-# column_ids = ['nonstd_concept_id', None, None]
-def generate_matching_positive_samples(df, columns, column_ids):
+def generate_matching_positive_samples(df):
     """
-    Create a dataset that contains 1-1 mappings between standard concepts and non-standard concepts.
+    Create a dataset that contains 1-1 mappings between standard concepts and all non-standard concepts.
 
     Args:
-        df (pd.DataFrame): The input DataFrame with at least columns ['std_name', 'concept_id']
-        columns (list of str): The columns to process (e.g., ['nonstd_name', 'synonym_name', 'descriptions']).
-        column_ids (list of str): The corresponding columns with concept IDs (e.g., ['nonstd_concept_id', None, None]).
+        df (pd.DataFrame): The input DataFrame with at least columns ['std_name', 'concept_id', 'all_nonstd_concept_id', 'all_nonstd_name'].
 
     Returns:
         pd.DataFrame: A processed dataset with exploded rows and additional metadata.
     """
-    df = df[df['all_nonstd'].str.len() > 0].reset_index()
-    
-    
+    # Filter rows where 'all_nonstd_name' has non-empty lists
+    df = df[df['all_nonstd_name'].str.len() > 0].reset_index()
+
+    # Explode the 'all_nonstd_concept_id' and 'all_nonstd_name' columns
+    exploded_df = df[['std_name', 'concept_id', 'all_nonstd_concept_id', 'all_nonstd_name', 'source']].explode(
+        ['all_nonstd_concept_id', 'all_nonstd_name', 'source']
+    )
+
+    # Prepare the training pairs
+    exploded_df['sentence1'] = exploded_df['std_name']
+    exploded_df['sentence2'] = exploded_df['all_nonstd_name']
+    exploded_df['concept_id1'] = exploded_df['concept_id']
+    exploded_df['concept_id2'] = exploded_df['all_nonstd_concept_id']
+    exploded_df['label'] = 1
+
+    # Select and format the final columns
     column_keep = ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label', 'source']
-    result_frames = []
-    for idx in range(len(columns)):
-        column = columns[idx]
-        column_id = column_ids[idx]
-        ## filter out None values
-        df2 = df[df[column].notna()]
-        
-        ## create 1-1 mapping between std and non-std
-        columns_to_explode = [col for col in [column, column_id] if col is not None]
-        exploded_df = df2[['std_name', 'concept_id'] + columns_to_explode].explode(columns_to_explode)
-        
-        ## prepare the training pair
-        exploded_df['sentence1'] = exploded_df['std_name']
-        exploded_df['sentence2'] = exploded_df[column]
-        exploded_df['concept_id1'] = exploded_df['concept_id']
-        if column_id is not None:
-            exploded_df['concept_id2'] = exploded_df[column_id]
-        else:
-            exploded_df['concept_id2'] = None
-        exploded_df['source'] = column
-        exploded_df['label'] = 1
-        exploded_df = exploded_df[column_keep]
-        ## save as excel for inspection
-        ## exploded_df.to_excel(f'positive_samples_{column}.xlsx', index=False)
-        result_frames.append(exploded_df)
-        
-    final_dataset = pd.concat(result_frames, ignore_index=True).drop_duplicates()
+    final_dataset = exploded_df[column_keep].drop_duplicates()
     final_dataset['concept_id1'] = final_dataset['concept_id1'].astype('Int64')
     final_dataset['concept_id2'] = final_dataset['concept_id2'].astype('Int64')
 
     return final_dataset
 
-# class GenericIterableDataset():
-#     def __init__(self,
-#                  positive_df,
-#                  candidate_df,
-#                  blacklist_map,
-#                  n_neg=4,
-#                  seed=42):
-#         """Initialize the dataset with required DataFrames and parameters."""
-#         self.positive_records = positive_df.to_dict("records")
-#         self.candidate_df = candidate_df.reset_index(drop=True)
-#         self.candidate_ids = self.candidate_df.index.values
-#         self.blacklist_map = {k: set(v) for k, v in blacklist_map.items()}
-#         self.n_neg = n_neg
-#         self.rng = np.random.default_rng(seed)
 
-#     def _generate_negative_samples(self, concept_id1, sentence1):
-#         blacklist_set = self.blacklist_map.get(concept_id1, set())
-#         valid_candidates = np.setdiff1d(self.candidate_ids, list(blacklist_set), assume_unique=True)
-
-#         if len(valid_candidates) <= self.n_neg:
-#             chosen = valid_candidates
-#         else:
-#             chosen = self.rng.choice(valid_candidates, size=self.n_neg, replace=False)
-
-#         concepts = self.candidate_df.iloc[chosen]
-#         return [{
-#             "sentence1": sentence1,
-#             "sentence2": row["concept_name"],
-#             "concept_id1": concept_id1,
-#             "concept_id2": row["concept_id"],
-#             "label": 0
-#         } for _, row in concepts.iterrows()]
-
-#     def __iter__(self):
-#         for row in self.positive_records:
-#             yield {**row, "label": 1}
-#             negatives = self._generate_negative_samples(row["concept_id1"], row["sentence1"])
-#             yield from negatives
-
-#     def __len__(self):
-#         return len(self.positive_df) * (self.n_neg + 1)
-    
-#     def trainer_iter(self):
-#         it = self.__iter__()
-#         for i in it:
-#             yield {nm:i[nm] for nm in ['sentence1', 'sentence2', 'label']}
-        
-#     ## print function
-#     def __str__(self):
-#         return f"GenericIterableDataset Total: {len(self)}\nProgress: {self.index}/{len(self.positive_df)}"
-    
-    
 class GenericIterableDataset():
     def __init__(self,
-                 positive_df,
-                 candidate_df,
-                 blacklist_map,
-                 n_neg=4,
-                 seed=42):
+                 positive_df: pd.DataFrame,
+                 candidate_df: pd.DataFrame,
+                 blacklist_map: Dict[int, Set[int]],
+                 false_positive_df: Optional[pd.DataFrame] = None,
+                 n_neg: int = 4,
+                 seed: int = 42):
+        """
+        Initialize the dataset with required DataFrames and parameters.
+
+        Args:
+            positive_df: DataFrame with positive examples.
+                         Required columns: ['sentence1', 'sentence2','concept_id1', 'concept_id2']
+            candidate_df: DataFrame with candidate concepts for negative sampling. Required columns: ['concept_id', 'concept_name']
+            blacklist_map: Dictionary mapping concept_id1 to a set of candidate indices to exclude during negative sampling for that concept_id1.
+            false_positive_df: Optional DataFrame with pre-defined false positive examples. Required columns if provided: ['concept_id1', 'sentence1', 'concept_id2', 'sentence2']
+            n_neg: Number of random negative samples to generate per positive example.
+            seed: Random seed for reproducibility.
+        """
         ## validate input
-        self.validate_data(positive_df, candidate_df)
+        self.validate_data(positive_df, candidate_df, false_positive_df)
         
         """Initialize the dataset with required DataFrames and parameters."""
         self.n_neg = n_neg
@@ -211,6 +154,7 @@ class GenericIterableDataset():
         self.pos_sentences2 = positive_df['sentence2'].values
         self.pos_concept_id1 = positive_df['concept_id1'].values
         self.pos_concept_id2 = positive_df['concept_id2'].values
+        self.positive_df_len = len(positive_df) # Store original length for __str__
 
         # Candidate data as numpy arrays for efficient sampling
         self.n_candidates = len(candidate_df)
@@ -224,9 +168,22 @@ class GenericIterableDataset():
 
         self.num_candidates = len(self.candidate_concept_ids)
         
+        # Process false positive data
+        self.fp_map = {}
+        self.total_fp_count = 0
+        if false_positive_df is not None and not false_positive_df.empty:
+            # Group FP samples by concept_id1 and store relevant data
+            grouped_fp = false_positive_df.groupby('concept_id1')
+            for cid, group in grouped_fp:
+                # Store as list of dicts for easy iteration
+                fp_records = group[['sentence1', 'sentence2', 'concept_id2']].to_dict('records')
+                self.fp_map[cid] = fp_records
+                self.total_fp_count += len(fp_records) # Count total FPs for length calculation
+
         self.index = 0
+        self.yielded_fp_ids = set()
     
-    def validate_data(self, positive_df, candidate_df):
+    def validate_data(self, positive_df, candidate_df, false_positive_df):
         """
         validate if all requirement are met
         """
@@ -247,13 +204,21 @@ class GenericIterableDataset():
                 raise TypeError(f"positive_df['{col}'] must be integer type")
         if not pd.api.types.is_integer_dtype(candidate_df['concept_id']):
             raise TypeError("candidate_df['concept_id'] must be integer type")
+        
+        if false_positive_df is not None and not false_positive_df.empty:
+            for col in ['concept_id1', 'concept_id2']:
+                if not pd.api.types.is_integer_dtype(false_positive_df[col]):
+                    raise TypeError(f"false_positive_df['{col}'] must be integer type")
     
     
     def __iter__(self) -> Iterator[Dict[str, Union[str, int]]]:
         self.index = 0
+        self.yielded_fp_ids.clear()
+        
         for idx in range(len(self.pos_concept_id1)):
             self.index = self.index + 1
-            # yield positive example
+            
+            # 1. yield positive example
             yield {
                 'sentence1': self.pos_sentences1[idx],
                 'sentence2': self.pos_sentences2[idx],
@@ -262,7 +227,7 @@ class GenericIterableDataset():
                 'label': 1
             }
 
-            # negative sampling
+            # 2. yield negative sampling
             cid1 = self.pos_concept_id1[idx]
             blacklist = self.blacklist_map.get(cid1, np.array([], dtype=int))
             n_select = min(self.n_neg, self.num_candidates - len(blacklist))
@@ -288,6 +253,47 @@ class GenericIterableDataset():
                     'concept_id2': self.candidate_concept_ids[c_idx],
                     'label': 0
                 }
+                
+            # 3. Yield False Positives (if available and not already yielded for this cid1)
+            if cid1 in self.fp_map and cid1 not in self.yielded_fp_ids:
+                fp_records = self.fp_map[cid1]
+                for fp_record in fp_records:
+                    yield {
+                        'sentence1': fp_record['sentence1'], # Use sentence1 from FP record
+                        'sentence2': fp_record['sentence2'],
+                        'concept_id1': cid1,                 # The matching concept_id1
+                        'concept_id2': fp_record['concept_id2'],
+                        'label': 0                          # False positives are labeled 0
+                    }
+                self.yielded_fp_ids.add(cid1) # Mark this concept_id1's FPs as yielded for this epoch
+
+    def _calculate_length(self):
+        """Calculates the exact total number of items the iterator will yield."""
+        total_len = 0
+        # Add count for positive examples
+        total_len += self.positive_df_len
+
+        # Add count for random negative samples
+        neg_count = 0
+        for cid1 in self.pos_concept_id1:
+            blacklist = self.blacklist_map.get(cid1, np.array([], dtype=int))
+            valid_count = self.num_candidates - len(blacklist)
+            neg_count += min(self.n_neg, max(0, valid_count))
+        total_len += neg_count
+
+        # Add count for unique false positive samples
+        # Iterate through unique concept_id1s present in positive_df that also have FPs
+        processed_fp_for_len = set()
+        fp_yield_count = 0
+        for cid1 in self.pos_concept_id1:
+             # Check if this cid1 has FPs and hasn't been counted yet
+            if cid1 in self.fp_map and cid1 not in processed_fp_for_len:
+                fp_yield_count += len(self.fp_map[cid1])
+                processed_fp_for_len.add(cid1) # Mark as counted
+        total_len += fp_yield_count
+
+        self._len = total_len
+
     
     ## calculate the exact length of the dataset
     def _element_size(self):
@@ -297,11 +303,14 @@ class GenericIterableDataset():
             valid_count = self.num_candidates - len(blacklist)
             self._len += min(self.n_neg, max(0, valid_count))
     
-    def element_size(self):
+    def __len__(self):
+        """Returns the total number of items the iterator will yield in one epoch."""
         if not hasattr(self, '_len'):
-            self._element_size()
+            self._calculate_length()
         return self._len
     
+    def element_size(self):
+        return self.__len__()    
     
     def trainer_iter(self):
         it = self.__iter__()
@@ -310,24 +319,31 @@ class GenericIterableDataset():
         
     ## print function
     def __str__(self):
-        return f"GenericIterableDataset Total: {len(self)}\nProgress: {self.index}/{len(self.positive_df)}"
+        base_info = f"GenericIterableDataset - Positive Pairs: {self.positive_df_len}"
+        len_info = f"Total Yield per Epoch: {len(self)}" if hasattr(self, '_len') else "Total Yield per Epoch: (call len() to calculate)"
+        fp_info = f"Mapped FP Concepts: {len(self.fp_map)}, Total FP Rows: {self.total_fp_count}" if self.fp_map else "No False Positives Provided"
+        # Show progress based on positive examples processed
+        progress_info = f"Current Iteration Progress: {self.index}/{self.positive_df_len} (positive pairs)"
+        return f"{base_info}\n{fp_info}\n{len_info}\n{progress_info}"
     
     
 
 class MatchingIterableDataset(GenericIterableDataset):
     def __init__(self,
                  positive_df_matching,
-                 matching_candidate_df,
-                 n_neg=40,
+                 candidate_df_matching,
+                 candidate_fp_matching = None,
+                 n_neg = 150,
+                 n_fp = 50,
                  seed=42,
                  special_token_sentence1=False,
-                 special_token_sentence2=True,
-                 special_token_candidate=True):
+                 special_token_sentence2=False,
+                 special_token_candidate=False):
         
         positive_df = positive_df_matching[["sentence1", "sentence2", "concept_id1", "concept_id2", "label"]].copy()
         
         # Create candidate_df
-        candidate_df = matching_candidate_df[["concept_id", "concept_name"]].reset_index(drop=True)
+        candidate_df = candidate_df_matching[["concept_id", "concept_name"]].reset_index(drop=True)
         
         # Add special tokens if specified
         if special_token_sentence1:
@@ -345,10 +361,18 @@ class MatchingIterableDataset(GenericIterableDataset):
         })
         blacklist_map = get_blacklist_map(target_ids, candidate_df, blacklist_df)
         
+        if candidate_fp_matching is not None and not candidate_fp_matching.empty:
+            ## find the max within_group_index
+            max_within_group_index = candidate_fp_matching['within_group_index'].max()
+            if n_fp>max_within_group_index+1:
+                print(f"Warning: n_fp ({n_fp}) is greater than the maximum within_group_index ({max_within_group_index+1}).")
+            candidate_fp_matching = candidate_fp_matching[candidate_fp_matching['within_group_index'] <= n_fp-1].copy()
+        
         super().__init__(
             positive_df=positive_df,
             candidate_df=candidate_df,
             blacklist_map=blacklist_map,
+            candidate_fp=candidate_fp_matching,
             n_neg=n_neg,
             seed=seed
         )

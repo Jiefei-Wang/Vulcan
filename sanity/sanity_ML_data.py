@@ -32,6 +32,10 @@ conceptML.apply(
 conceptML.apply(
     lambda x: check_list_length(x, 'all_nonstd_name', 'all_nonstd_concept_id'), axis=1
 )
+conceptML.apply(
+    lambda x: check_list_length(x, 'all_nonstd_concept_id', 'source'), axis=1
+)
+
     
 # for each row, the first len(nonstd_name) elements of all_nonstd_concept_id should be non-na, the rest should be na
 # for i in range(len(conceptML)):
@@ -41,6 +45,9 @@ conceptML.apply(
 #         raise ValueError(f"Unexpected values in all_nonstd_concept_id at index {i}")
 #     if all(pd.isna(all_nonstd_concept_id[len(nonstd_name):])) == False:
 #         raise ValueError(f"Unexpected values in all_nonstd_concept_id at index {i}")
+
+
+
 
 print("Total elements in each column")
 for col in ['nonstd_name', 'nonstd_concept_id','synonym_name', 'description', 'all_nonstd_name', 'all_nonstd_concept_id']:

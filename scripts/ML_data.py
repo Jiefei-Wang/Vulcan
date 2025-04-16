@@ -9,14 +9,13 @@
 # If a value in a column is empty, it must be an empty list
 # 
 # Store the result in data/ML/conceptML.feather
-import importlib
-import modules
+import os
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
 from modules.ML_extract_name import extract_nonstd_names, extract_synonym, extract_umls_description
 from modules.UMLS_file import read_mrconso, read_mrdef
-
+import swifter
 
 # Load OMOP CDM concept tables from feather files
 concept = pd.read_feather('data/omop_feather/concept.feather')
@@ -140,6 +139,12 @@ conceptML["all_nonstd_concept_id"] = conceptML.apply(
     lambda x: list(x["nonstd_concept_id"]) + [np.nan] * (len(x["all_nonstd_name"]) - len(x["nonstd_concept_id"])),
     axis=1
 )
+conceptML['source'] = conceptML.apply(
+    lambda x: ['nonstd_name'] * len(x['nonstd_name']) + ['synonym_name'] * len(x['synonym_name']) + ['description'] * len(x['description']),
+    axis=1
+)
+
+
 conceptML["nonstd_concept_id"]
 conceptML["all_nonstd_concept_id"]
 
@@ -154,12 +159,18 @@ conceptML["all_nonstd_concept_id"]
 # Convert data types as specified
 conceptML['concept_id'] = conceptML['concept_id'].astype('Int64') 
 conceptML['concept_name'] = conceptML['concept_name'].astype('string') 
-conceptML['domain_id'] = conceptML['domain_id'].astype('category')
-conceptML['vocabulary_id'] = conceptML['vocabulary_id'].astype('category')
+conceptML['domain_id'] = conceptML['domain_id'].astype('string')
+conceptML['vocabulary_id'] = conceptML['vocabulary_id'].astype('string')
 conceptML['concept_code'] = conceptML['concept_code'].astype('string')
 
 
 
 print("Saving conceptML")
 # Save the final concept mapping table
-conceptML.to_feather('data/ML/ML_data/conceptML.feather')
+
+path = 'data/ML/base_data'
+## create directory if it does not exist
+if not os.path.exists(path):
+    os.makedirs(path)
+
+conceptML.to_feather(os.path.join(path, 'conceptML.feather'))

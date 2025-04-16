@@ -1,6 +1,7 @@
 
 import pandas as pd
 
+
 def read_mrconso(mrconso_path):
     mrconso_columns = [
         "CUI", "LAT", "TS", "LUI", "STT", "SUI", "ISPREF", "AUI", "SAUI", "SCUI",
