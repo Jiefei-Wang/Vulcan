@@ -35,7 +35,6 @@ def extract_nonstd_names(concept, concept_relationship):
         nonstd_map, left_on='concept_id', right_on='concept_id_2', 
         how='inner'
         ).drop(columns=['concept_id_2'])
-        
     ## find the non-standard concept names
     nonstd_concept_name_map = concept[['concept_id', 'concept_name']].copy().rename(columns={'concept_name': 'nonstd_name', 'concept_id': 'nonstd_concept_id'})
 
@@ -43,12 +42,11 @@ def extract_nonstd_names(concept, concept_relationship):
         nonstd_concept_name_map, 
         on='nonstd_concept_id', 
         how='inner')
-
+    
     ## aggregate, each concept can have multiple nonstandard concept name
-    concept_merged3 = concept_merged2.groupby('concept_id'
-        ).agg({
-            'nonstd_name': lambda x: list(x),
-            'nonstd_concept_id': lambda x: list(x)
+    concept_merged3 = concept_merged2.groupby("concept_id").agg({
+            'nonstd_name': pd.Series.tolist,
+            'nonstd_concept_id': pd.Series.tolist
         }).reset_index()
                 
     return concept_merged3

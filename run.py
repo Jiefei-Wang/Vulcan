@@ -1,3 +1,13 @@
+
+########################
+## Convert OMOP and UMLS data to feather format
+########################
+with open('scripts/data_conversion.py') as f:
+    exec(f.read())
+
+########################
+## Data management
+########################
 with open('reload_library.py') as f:
     exec(f.read())
 

@@ -14,21 +14,20 @@ from tqdm import tqdm
 import pandas as pd
 import numpy as np
 from modules.ML_extract_name import extract_nonstd_names, extract_synonym, extract_umls_description
-from modules.UMLS_file import read_mrconso, read_mrdef
-import swifter
+from modules.timed_logger import logger
+# import swifter
 
+logger.reset_timer()
+logger.log("Loading concept tables")
 # Load OMOP CDM concept tables from feather files
 concept = pd.read_feather('data/omop_feather/concept.feather')
 concept_relationship = pd.read_feather('data/omop_feather/concept_relationship.feather')
 concept_synonym = pd.read_feather("data/omop_feather/concept_synonym.feather")
 
-
-# Load and process UMLS reference files
-# UMLS data contains descriptions of the concepts
-mrconso_path = "data/UMLS_raw/MRCONSO.RRF"
-umls_def_path = "data/UMLS_raw/MRDEF.RRF"
-mrconso_df = read_mrconso(mrconso_path) # Reads UMLS concept names and relationships
-mrdef_df = read_mrdef(umls_def_path) # Reads UMLS concept definitions
+logger.log("Loading UMLS tables")
+# Load UMLS reference files
+mrconso_df = pd.read_feather("data/UMLS_feather/mrconso_df.feather")
+mrdef_df = pd.read_feather("data/UMLS_feather/mrdef_df.feather")
 
 
 # Extract standard concept names and descriptions
@@ -79,16 +78,16 @@ SNOMED Veterinary       144
 
 # nonstd_concept[nonstd_concept['vocabulary_id'] == 'CIEL'].concept_name
 
-
-# Extract a mapping of standard concepts to non-standard names
+logger.log("Extract a mapping of standard concepts to non-standard names")
 nonstd_names = extract_nonstd_names(concept, concept_relationship) 
 
-# Get concept synonyms
+logger.log("Get concept synonyms from OMOP")
 synonum_names = extract_synonym(concept, concept_synonym)
 
-# Get UMLS definitions
+logger.log("Get concept descriptions from UMLS")
 umls_names = extract_umls_description(concept, mrconso_df, mrdef_df)
 
+logger.log("Merge all concept information")
 # Define essential columns to keep from standard concepts
 column_keep = ['concept_id', 'concept_name', 'domain_id', 'vocabulary_id', 'concept_code']
 
@@ -118,12 +117,12 @@ for i in cols:
     conceptML[i] = conceptML[i].apply(lambda x: [] if x is None or x is np.NaN else x)
 
 
-## Exclude names that are in previous columns
+logger.log("Remove duplicates in non-standard names")
 cols = ['nonstd_name', 'synonym_name', 'description']
 for i, col in enumerate(cols):
     if i > 0:  # Skip the first column as there are no previous columns
         for prev_col in cols[:i]:
-            print(f"processing {i}th column: {col} and previous column: {prev_col}")
+            logger.log(f"processing {i}th column: {col} and previous column: {prev_col}")
             conceptML[col] = conceptML.apply(
                 lambda x: [name for name in x[col] if name not in x[prev_col]], 
                 axis=1
@@ -131,7 +130,7 @@ for i, col in enumerate(cols):
 
 
 # conceptML = pd.read_feather('data/ML/ML_data/conceptML.feather')
-## combine all names into one
+logger.log("Combine non-standard names")
 columns_combine =  ['nonstd_name', 'synonym_name', 'description']
 conceptML['all_nonstd_name'] = conceptML[columns_combine].apply(lambda x: [i for k in x for i in k], axis=1)
 
@@ -145,17 +144,6 @@ conceptML['source'] = conceptML.apply(
 )
 
 
-conceptML["nonstd_concept_id"]
-conceptML["all_nonstd_concept_id"]
-
-
-# conceptML.columns
-# conceptML1 = conceptML[['all_nonstd_concept_id', 'all_nonstd_name']].copy()
-# conceptML2 = conceptML1[0:10000].copy()
-
-
-# conceptML1.to_feather('foo.feather')
-
 # Convert data types as specified
 conceptML['concept_id'] = conceptML['concept_id'].astype('Int64') 
 conceptML['concept_name'] = conceptML['concept_name'].astype('string') 
@@ -165,7 +153,7 @@ conceptML['concept_code'] = conceptML['concept_code'].astype('string')
 
 
 
-print("Saving conceptML")
+logger.log("Saving conceptML")
 # Save the final concept mapping table
 
 path = 'data/ML/base_data'
@@ -174,3 +162,5 @@ if not os.path.exists(path):
     os.makedirs(path)
 
 conceptML.to_feather(os.path.join(path, 'conceptML.feather'))
+
+logger.done()
