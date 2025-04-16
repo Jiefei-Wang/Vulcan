@@ -13,10 +13,6 @@ import onnxruntime
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 from modules.ChromaVecDB import ChromaVecDB
-from modules.performance import map_concepts, performance_metrics
-from modules.ML_sampling import add_special_token
-import json
-from itertools import chain
 
 
 
@@ -27,20 +23,14 @@ model_train = SentenceTransformer(model_path)
 
 ####################################
 ## Work on conditions domain
-## CIM vocabulary maps to standard concepts
 ####################################
 
-# load 
-#
-# positive_dataset_matching.to_feather('data/ML/matching/positive_dataset_matching.feather')
-# candidate_df_matching.to_feather('data/ML/matching/candidate_dataset_matching.feather')
 
+positive_df_matching = pd.read_feather('data/ML/matching/positive_df_matching.feather')
+candidate_df_matching = pd.read_feather('data/ML/matching/candidate_df_matching.feather')
 
-positive_dataset_matching = pd.read_feather('data/ML/matching/positive_dataset_matching.feather')
-candidate_df_matching = pd.read_feather('data/ML/matching/candidate_dataset_matching.feather')
-
-# all standard concepts used in positive_dataset_matching
-std_concept_matching = positive_dataset_matching[['concept_id1', 'sentence1']].drop_duplicates().rename(
+# all standard concepts used in positive_df_matching
+std_concept_matching = positive_df_matching[['concept_id1', 'sentence1']].drop_duplicates().rename(
     columns={'concept_id1': 'concept_id', 'sentence1': 'concept_name'})
 
 # build the reference embedding for standard concepts

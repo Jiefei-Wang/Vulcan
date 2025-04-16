@@ -1,30 +1,46 @@
 from typing import Dict, Iterator, Union, Optional, Set
 import pandas as pd
-import random
-from tqdm import tqdm
-import torch
 import numpy as np
+from modules.TOKENS import TOKENS
 
+def remove_reserved(row, reserved_ids, id_col, *name_cols):
+    """
+    Remove elements from id_col and corresponding elements from name_cols when id_col matches reserved_ids.
 
-def remove_reserved(row, reserved_ids, id_col, name_col):
+    Args:
+        row (pd.Series): A row of the DataFrame.
+        reserved_ids (set): A set of IDs to be removed.
+        id_col (str): The column name for IDs.
+        *name_cols (str): Arbitrary number of column names for names corresponding to the IDs.
+
+    Returns:
+        pd.Series: A Series containing the filtered id_col and name_cols as lists.
+    """
     nonstd_ids = row[id_col]
-    nonstd_names = row[name_col]
-    filtered = [(cid, name) for cid, name in zip(nonstd_ids, nonstd_names) if cid not in reserved_ids]
+    nonstd_names = [row[name_col] for name_col in name_cols]
+
+    # Filter IDs and corresponding names
+    filtered = [
+        (cid, *names) for cid, *names in zip(nonstd_ids, *nonstd_names) if cid not in reserved_ids
+    ]
 
     # Unzip the filtered list if it's not empty, else assign empty lists
     if filtered:
-        filtered_ids, filtered_names = zip(*filtered)
+        filtered_data = list(zip(*filtered))
+        filtered_ids = list(filtered_data[0])
+        filtered_names = [list(col) for col in filtered_data[1:]]
     else:
-        filtered_ids, filtered_names = [], []
-    return filtered_ids, filtered_names
+        filtered_ids = []
+        filtered_names = [[] for _ in name_cols]
 
+    return pd.Series([filtered_ids] + filtered_names)
 
 def get_sentence_name(domain_id, concept_name):
     sentence_name = domain_id + ': ' + concept_name
     return sentence_name
 
 
-def get_filtered_concept_ancestor(concept_ancestor, target_ids):
+def get_filtered_concept_ancestor(concept_ancestor, target_ids, std_ids):
     """
     Filter the concept_ancestor table to include only relevant concepts. Another concept can be from any domain.
     
@@ -34,14 +50,17 @@ def get_filtered_concept_ancestor(concept_ancestor, target_ids):
     Returns:
         pd.DataFrame: Filtered concept_ancestor table.
     """
-    concept_ancestor_filtered = concept_ancestor[
-        (
-            concept_ancestor['ancestor_concept_id'].isin(target_ids)|
-            concept_ancestor['descendant_concept_id'].isin(target_ids)
-        )&
-        concept_ancestor['min_levels_of_separation']!=0
+    concept_ancestor2 = concept_ancestor[
+        concept_ancestor['min_levels_of_separation']==1&
+        concept_ancestor['ancestor_concept_id'].isin(std_ids)&
+        concept_ancestor['descendant_concept_id'].isin(std_ids)
         ]
-    return concept_ancestor_filtered
+    
+    concept_ancestor3 = concept_ancestor2[
+            concept_ancestor2['ancestor_concept_id'].isin(target_ids)|
+            concept_ancestor2['descendant_concept_id'].isin(target_ids)
+        ].reset_index(drop=True)
+    return concept_ancestor3
 
 
 
@@ -366,13 +385,15 @@ class MatchingIterableDataset(GenericIterableDataset):
             max_within_group_index = candidate_fp_matching['within_group_index'].max()
             if n_fp>max_within_group_index+1:
                 print(f"Warning: n_fp ({n_fp}) is greater than the maximum within_group_index ({max_within_group_index+1}).")
-            candidate_fp_matching = candidate_fp_matching[candidate_fp_matching['within_group_index'] <= n_fp-1].copy()
+            false_positive_df = candidate_fp_matching[candidate_fp_matching['within_group_index'] <= n_fp-1].copy()
+        else:
+            false_positive_df = None
         
         super().__init__(
             positive_df=positive_df,
             candidate_df=candidate_df,
             blacklist_map=blacklist_map,
-            candidate_fp=candidate_fp_matching,
+            false_positive_df=false_positive_df,
             n_neg=n_neg,
             seed=seed
         )
@@ -385,7 +406,7 @@ def generate_relation_positive_samples(
     concept: pd.DataFrame
 ):
     """
-    Generate positive samples for ancestor-descendant relationships.
+    Generate positive samples for ancestor-descendant relationships. sentence1 is always the ancestor, sentence2 is always the descendant.
     
     Args:
         concept_ancestor_filtered (pd.DataFrame): Filtered concept_ancestor table that you want to use to generate positive samples. Requires columns: ancestor_concept_id, descendant_concept_id.
@@ -450,7 +471,7 @@ class OffspringIterableDataset(GenericIterableDataset):
 
         blacklist_map = get_blacklist_map(target_standard_ids, candidate_df, positive_df)
 
-        to_offspring_token = '[OFFSPRINT]'
+        to_offspring_token = TOKENS.child
         positive_df['sentence1'] = positive_df['sentence1'].apply(lambda x: add_special_token(x, to_offspring_token))
 
         super().__init__(
@@ -476,7 +497,7 @@ class AncestorIterableDataset(GenericIterableDataset):
         blacklist_df = positive_df.rename(columns={'concept_id1': 'concept_id2', 'concept_id2': 'concept_id1'})
         blacklist_map = get_blacklist_map(target_standard_ids, candidate_df, blacklist_df)
 
-        to_ancestor_token = '[ANCESTOR]'
+        to_ancestor_token = TOKENS.parent
         positive_df['sentence2'] = positive_df['sentence2'].apply(lambda x: add_special_token(x, to_ancestor_token))
         candidate_df['concept_name'] = candidate_df['concept_name'].apply(lambda x: add_special_token(x, to_ancestor_token))
 
@@ -527,21 +548,6 @@ def get_blacklist_map(positive_ids, candidate_df, blacklist_df):
     blacklist_map = blacklist_df.groupby("concept_id1")["row_index"].apply(set).to_dict()
     return blacklist_map
 
-
-
-## Combine pd.Series of list or string into a single list
-def combine_elements(x):
-        res = []
-        for i in x:
-            if isinstance(i, list) or isinstance(i, np.ndarray):
-                res.extend([j for j in i if j is not None])
-            elif isinstance(i, str):
-                res.append(i)
-        return res
-    
-def combine_columns(df):
-    res = df.apply(combine_elements, axis=1)
-    return res
 
 
 def replace_std_concept_with_reserved(concept_ancestor_validation, std_bridge, column):

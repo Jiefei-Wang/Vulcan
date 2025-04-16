@@ -13,9 +13,9 @@ import os
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
+# import swifter
 from modules.ML_extract_name import extract_nonstd_names, extract_synonym, extract_umls_description
 from modules.timed_logger import logger
-# import swifter
 
 logger.reset_timer()
 logger.log("Loading concept tables")
@@ -164,3 +164,4 @@ if not os.path.exists(path):
 conceptML.to_feather(os.path.join(path, 'conceptML.feather'))
 
 logger.done()
+
