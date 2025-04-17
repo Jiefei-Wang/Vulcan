@@ -87,11 +87,9 @@ model, tokenizer = get_base_model(base_model_path, special_tokens)
 evaluator = CustomEvaluator()
 
 
-
-
-mini_batch_size = 64 
-arg_eval_steps = 1024
-arg_saving_steps = 1024*2
+mini_batch_size = 256 
+arg_eval_steps = 2048
+arg_saving_steps = arg_eval_steps*2
 
 fp16 = True # Use Mixed Precision (Float16)
 warmup_ratio = 0.1
@@ -102,6 +100,7 @@ epoch_num = 5
 best_eval_loss = float('inf')
 
 # --- Initialization ---
+wandb_report_steps = 64
 wandb.init(project="Concept_Mapping", name=output_dir)
 
 # 1. Model and Tokenizer
@@ -134,7 +133,7 @@ ratios = {k: ratios[k] for k in ds_names}
 # These affect how much data the sampler loads/shuffles at once
 # The sampler yields blocks, we process them with mini-batches inside
 shuffle_buffer = mini_batch_size * arg_saving_steps * 2 # As per your code
-sampler_batch_size = mini_batch_size * 64
+sampler_batch_size = 1024 * 16
 sampler = DictBatchSampler(train_dataset_dict, batch_size=sampler_batch_size, ratios=ratios, shuffle_buffer=shuffle_buffer)
 ds_sizes = sampler.element_size()
 iterations = sampler.iteration_size()
@@ -163,7 +162,7 @@ scaler = GradScaler(device=device_type, enabled=fp16)
 # --- Manual Training Loop ---
 global_step = 0
 current_epoch = -1
-epoch_loss = 0.0
+epoch_total_loss = 0.0
 wandb.watch(model) # Log gradients and model topology
 
 
@@ -178,55 +177,46 @@ for j, data_block in enumerate(sampler):
     if epoch_i != current_epoch:
         print(f"\n--- Starting Epoch {epoch_i + 1}/{epoch_num} ---")
         current_epoch = epoch_i
-        epoch_loss = 0.0
+        epoch_total_loss = 0.0
+        epoch_steps_processed = 0
         
         model.eval()
         with torch.no_grad():
             evaluator.build_reference(model, database)
 
     # --- Process the Data Block ---
-    model.train() # Set model to training mode for this block
+    model = model.train() # Set model to training mode for this block
 
     # Determine number of mini-batches within this block
     # Assuming data_block is a list of examples
-    num_examples_in_block = len(data_block)
-    num_mini_batches = math.ceil(num_examples_in_block / mini_batch_size)
     sentence1s = data_block['sentence1']
     sentence2s = data_block['sentence2']
-    labels = data_block['label']
-    ## labels to tensor
-    labels = torch.tensor(labels, dtype=torch.float32).to(device)
+    labels_list = data_block['label']
     
+    labels_tensor = torch.tensor(labels_list, dtype=torch.float32).to(device)
+    tokenized_sentence1s_block = tokenizer(
+        sentence1s, padding=True, truncation=True, return_tensors="pt"
+    )
+    tokenized_sentence2s_block = tokenizer(
+        sentence2s, padding=True, truncation=True, return_tensors="pt"
+    )
     
+    num_examples_in_block = len(data_block)
+    num_mini_batches = math.ceil(num_examples_in_block / mini_batch_size)
+    block_loss = 0.0
     # Process the block in mini-batches
     for i in range(num_mini_batches):
         start_idx = i * mini_batch_size
-        end_idx = start_idx + mini_batch_size
+        end_idx = min(start_idx + mini_batch_size, num_examples_in_block)
         mini_batch = data_block[start_idx:end_idx]
         
-        mini_sentence1s = sentence1s[start_idx:end_idx]
-        mini_sentence2s = sentence2s[start_idx:end_idx]
-        mini_labels = labels[start_idx:end_idx]
-        
-
         if not mini_batch:
             raise ValueError(f"Empty mini_batch at index {i} in block {j}.")
-
-        tokenized_sentence1s = tokenizer(
-            mini_sentence1s,
-            padding=True,
-            truncation=True,
-            return_tensors="pt"
-        ).to(device)
-        tokenized_sentence2s = tokenizer(
-            mini_sentence2s,
-            padding=True,
-            truncation=True,
-            return_tensors="pt"
-        ).to(device)
         
-        mini_sentence_pairs = [tokenized_sentence1s, tokenized_sentence2s]
-        
+        mini_labels = labels_tensor[start_idx:end_idx]
+        mini_tokenized_s1 = {k: v[start_idx:end_idx].to(device) for k, v in tokenized_sentence1s_block.items()}
+        mini_tokenized_s2 = {k: v[start_idx:end_idx].to(device) for k, v in tokenized_sentence2s_block.items()}
+        mini_sentence_pairs = [mini_tokenized_s1, mini_tokenized_s2]
 
         # Forward pass
         optimizer.zero_grad()
@@ -239,27 +229,34 @@ for j, data_block in enumerate(sampler):
         scaler.step(optimizer)
         scaler.update()
         scheduler.step() # Step scheduler after optimizer step
-        loss_value
         
-        epoch_loss += loss_value.item()
-        epoch_avg_loss = epoch_loss / (j % iterations_per_epoch + 1)
-        wandb.log({
-            "train/loss": loss_value.item(),
-            "train/learning_rate": scheduler.get_last_lr()[0],
-            "epoch": current_epoch + (j % iterations_per_epoch) / iterations_per_epoch,
-            "epoch_avg_loss": epoch_avg_loss
-        }, step=global_step)
+        current_loss = loss_value.item()
+        block_loss += current_loss
+        epoch_total_loss += current_loss
+        epoch_steps_processed += 1
+        epoch_avg_loss = epoch_total_loss / epoch_steps_processed
 
+        
         global_step += 1
         progress_bar_outer.update(1)
         progress_bar_outer.set_postfix({"Loss": f"{loss_value.item():.4f}", "Epoch": f"{current_epoch+1}", "Epoch Avg Loss": f"{epoch_avg_loss:.4f}"})
+        
+        if global_step % wandb_report_steps == 0:
+            epoch_progress = global_step / iterations_per_epoch
+            wandb.log({
+                "train/loss": block_loss/num_mini_batches,
+                "train/learning_rate": scheduler.get_last_lr()[0],
+                "epoch_progress": epoch_progress,
+                "epoch_avg_loss": epoch_avg_loss
+            }, step=global_step)
+        
         
         ## save model every arg_saving_steps
         if global_step % arg_saving_steps == 0:
             print("Saving checkpoint...")
             auto_save_model(model, tokenizer, output_dir, max_saves=max_saves)
-        
-
+    
+    
     # Log training loss periodically
     if global_step % arg_eval_steps == 0:
         model.eval()
@@ -267,7 +264,8 @@ for j, data_block in enumerate(sampler):
             eval_metrics = evaluator(query, n_results=100, k_list= [1, 10, 50])
             eval_results = {f"eval/{k}": v for k, v in eval_metrics.items()}
             wandb.log(eval_results, step=global_step)
-
+        print(f"Evaluation results: {eval_metrics}")
+        
         eval_loss = eval_metrics['top 1']
         # 4. Save Best Model
         if eval_loss < best_eval_loss:
