@@ -12,6 +12,7 @@ logger.reset_timer()
 
 logger.log("Loading concept tables")
 concept = pd.read_feather('data/omop_feather/concept.feather')
+conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
 concept_relationship = pd.read_feather('data/omop_feather/concept_relationship.feather')
 concept_ancestor = pd.read_feather('data/omop_feather/concept_ancestor.feather')
 conceptML = pd.read_feather('data/ML/base_data/conceptML.feather')
@@ -42,7 +43,7 @@ logger.log("Exclude the reserved concepts from the non-standard concepts")
 # Exclude the reserved concepts from the non-standard concepts.
 # - This will NOT exclude the reserved concepts from the standard concepts as standard concepts are the required component in OMOP.
 reserved_vocab = "CIEL"
-reserved_concepts = concept[(concept.standard_concept != 'S')&(concept.vocabulary_id == reserved_vocab)]
+reserved_concepts = conceptEX[(conceptEX.standard_concept != 'S')&(conceptEX.vocabulary_id == reserved_vocab)]
 reserved_concept_ids = set(reserved_concepts.concept_id.to_list())
 print(f"reserved concepts #: {len(reserved_concept_ids)}") # 50881
 

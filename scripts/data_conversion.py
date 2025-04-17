@@ -30,26 +30,24 @@ concept_ancestor.to_feather(os.path.join(omop_clean_root, 'concept_ancestor.feat
 
 std_concepts = concept[concept['standard_concept'] == 'S']
 nonstd_concepts = concept[concept['standard_concept'] != 'S']
-
+len(concept) # 9683303
+len(std_concepts) # 3490518
+len(nonstd_concepts) # 6192785
 
 ## merge nonstd_conditions with concept_relationship to get the standard_concept_id
 std_map = concept_relationship[concept_relationship.relationship_id=='Maps to'][['concept_id_1', 'concept_id_2']].rename(columns={'concept_id_2': 'std_concept_id'})
 
 ## map, for multple mappings, combine them into a list
-concept_merged = nonstd_concepts.merge(
+conceptEX = concept.merge(
     std_map, left_on='concept_id', right_on='concept_id_1', 
     how='left'
     ).drop(columns=['concept_id_1'])
 
+conceptEX['std_concept_id'] = conceptEX['std_concept_id'].astype('Int64')
 
-## filter out the concept with no mapping
-concept_merged = concept_merged[concept_merged.std_concept_id.apply(lambda x: not pd.isna(x))]
-
-## type to int64
-concept_merged.std_concept_id = concept_merged.std_concept_id.astype('int64')
 
 ## group by concept_id and combine the standard_concept_id into a list
-concept_merged = concept_merged.groupby('concept_id'
+conceptEX = conceptEX.groupby('concept_id'
     ).agg({
         'concept_name': 'first',
         'domain_id': 'first',
@@ -65,7 +63,6 @@ concept_merged = concept_merged.groupby('concept_id'
 
 
 ## Combine the standard and non-standard concepts
-conceptEX = pd.concat([std_concepts, concept_merged])
 conceptEX.to_feather(os.path.join(omop_clean_root, 'conceptEX.feather'))
 
 

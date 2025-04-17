@@ -57,6 +57,7 @@ nonstd_conditions = reserved_concepts[reserved_concepts['domain_id'] != 'Conditi
 ## For validation
 #################################
 conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
+concept = pd.read_feather('data/omop_feather/concept.feather')
 conditions = conceptEX[conceptEX['domain_id'] == 'Condition']
 std_conditions = conditions[conditions['standard_concept'] == 'S']
 nonstd_conditions = conditions[conditions['standard_concept'] != 'S']
