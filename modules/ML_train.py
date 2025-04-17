@@ -179,7 +179,7 @@ from modules.ChromaVecDB import ChromaVecDB
 from modules.performance import map_concepts, performance_metrics
 
 class CustomEvaluator(SentenceEvaluator):
-    def __init__(self, reference, query, n_results=50, k_list = [1, 10, 50]):
+    def __init__(self):
         """
         Custom evaluator for precision@k and recall@k.
         
@@ -188,30 +188,20 @@ class CustomEvaluator(SentenceEvaluator):
             chromadb_model: ChromaVecDB model for building the reference.
             n_results: Number of top results to consider for evaluation.
         """
-        self.n_results = n_results
-        self.k_list = k_list
         self.iteration = 0
         self.db = None
-        self.reference = reference
-        self.query = query
 
-    def build_reference(self, model):
+    def build_reference(self, model, reference):
         """Build the reference ChromaDB."""
         print("Building reference ChromaDB...")
         self.db = ChromaVecDB(model=model, name="validation_ref")
         self.db.empty_collection()
-        self.db.store_concepts(self.reference, batch_size=5461)
+        self.db.store_concepts(reference, batch_size=5461)
 
-    def __call__(self, model, output_path=None, epoch=-1, steps=-1):
+    def __call__(self, query, n_results=50, k_list = [1, 10, 50]):
         """
         Evaluate the model and compute precision@k and recall@k.
-        
-        Args:
-            model: The SentenceTransformer model to evaluate.
-            output_path: Path to save evaluation results (optional).
-            epoch: Current epoch (optional).
-            steps: Current step (optional).
         """
-        df_test = map_concepts(self.db, self.query, n_results=self.n_results)
-        res = {f"top {k}": performance_metrics(df_test,k=k) for k in self.k_list}
+        df_test = map_concepts(self.db, query, n_results=n_results)
+        res = {f"top {k}": performance_metrics(df_test,k=k) for k in k_list}
         return res

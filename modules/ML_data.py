@@ -174,7 +174,7 @@ class DictBatchSampler:
         Return the number of elements in the dataset
         """
         try:
-            samples = {k: v.element_size() for k,v in self.datasets_dict.items()}
+            samples = {k: len(v) for k,v in self.datasets_dict.items()}
         except TypeError:
             raise ValueError("All datasets must support element_size() to calculate iteration size")
         return samples

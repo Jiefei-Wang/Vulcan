@@ -75,23 +75,24 @@ class ChromaVecDB():
             df (pd.DataFrame): a concept dataframe with `concept_name`
             n_results (int, optional): Number of results to return. Defaults to 100.
         """
-        embeddings = self.embed(df, batch_size=batch_size, show_progress_bar=show_progress_bar)
-        return self._query(embeddings, n_results=n_results, batch_size=batch_size)
+        embeddings = self.embed(df, batch_size=batch_size, show_progress_bar=False)
+        return self._query(embeddings, n_results=n_results, batch_size=batch_size, show_progress_bar=show_progress_bar)
     
-    def _query(self, embeddings, n_results=100, batch_size=1024):
+    def _query(self, embeddings, n_results=100, batch_size=1024, show_progress_bar=True):
         collection = self.get_collection()
         all_results = None
-        for i in tqdm(range(0, len(embeddings), batch_size), desc="Querying in batches"):
+        progress_bar = tqdm(range(0, len(embeddings), batch_size), desc="Querying in batches") if show_progress_bar else range(0, len(embeddings), batch_size)
+        for i in progress_bar:
             embeddings_dt = embeddings[i:i + batch_size]
             res = collection.query(
                 query_embeddings=embeddings_dt,
                 n_results=n_results,
-                include = ['distances']
+                include=['distances']
             )
-            if i==0:
+            if i == 0:
                 all_results = res
             else:
-                ## append res dict element to all_results
+                # Append res dict element to all_results
                 for key in res:
                     if all_results[key] is not None:
                         all_results[key].extend(res[key])

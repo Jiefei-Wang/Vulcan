@@ -11,7 +11,6 @@ logger.reset_timer()
 
 
 logger.log("Loading concept tables")
-concept = pd.read_feather('data/omop_feather/concept.feather')
 conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
 concept_relationship = pd.read_feather('data/omop_feather/concept_relationship.feather')
 concept_ancestor = pd.read_feather('data/omop_feather/concept_ancestor.feather')

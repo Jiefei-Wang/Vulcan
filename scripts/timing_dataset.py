@@ -88,11 +88,11 @@ train_dataset = {
 
 
 
-n_total = 100000
-block_size = 1024
+n_total = 1000000
+block_size = 1024*4
 dict_ratio ={'matching': 2, 'ancestor': 1}
 # dict_ratio ={'matching': 1, 'offspring': 0, 'ancestor': 0}
-sampler = DictBatchSampler(train_dataset, block_size, ratios = dict_ratio, train=False)
+sampler = DictBatchSampler(train_dataset, block_size, ratios = dict_ratio, train=True)
 
 it = iter(sampler)
 dt = next(it)

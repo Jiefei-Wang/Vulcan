@@ -28,7 +28,6 @@ model_train = SentenceTransformer(model_path)
 logger.log("Loading matching tables")
 # std_target = pd.read_feather('data/ML/base_data/std_target.feather')
 positive_df_matching = pd.read_feather('data/ML/matching/positive_df_matching.feather')
-candidate_df_matching = pd.read_feather('data/ML/matching/candidate_df_matching.feather')
 
 # all standard concepts used in positive_df_matching
 std_concept_matching = positive_df_matching[['concept_id1', 'sentence1']].drop_duplicates().rename(
