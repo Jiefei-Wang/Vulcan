@@ -215,3 +215,15 @@ class DictBatchSampler:
         self.rng.shuffle(batch)  # Shuffle using the separate random stream
         batch_ds = Dataset.from_list(batch)
         return batch_ds  # Return a list directly, avoid Dataset.from_list overhead
+    
+
+def future_tokenize(tokenizer, data_block):
+    sentence1s = data_block['sentence1']
+    sentence2s = data_block['sentence2']
+    tokenized_sentence1s_block = tokenizer(
+        sentence1s, padding=True, truncation=True, return_tensors="pt"
+    )
+    tokenized_sentence2s_block = tokenizer(
+        sentence2s, padding=True, truncation=True, return_tensors="pt"
+    )
+    return tokenized_sentence1s_block, tokenized_sentence2s_block

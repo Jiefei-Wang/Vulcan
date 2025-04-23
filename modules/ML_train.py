@@ -100,6 +100,7 @@ def auto_save_model(model, tokenizer, save_folder, max_saves):
     
     model_indices, file_names = get_model_indices(save_folder)
 
+    error_num = 0
     while len(model_indices) > max_saves:
         model_indices, file_names = get_model_indices(save_folder)
         file_name = file_names[0]  # oldest based on filename index
@@ -109,6 +110,12 @@ def auto_save_model(model, tokenizer, save_folder, max_saves):
             print(f"Deleted oldest model: {oldest_model_path}")
         except Exception as e:
             print(f"Error deleting oldest model {oldest_model_path}: {e}")
+            import subprocess
+            subprocess.call(['powershell', '-Command', f'Remove-Item -Path "{oldest_model_path}" -Recurse -Force'])
+            error_num += 1
+            if error_num > 2:
+                print("Error deleting old models, stopping auto-delete.")
+                break
 
     return current_save_index
 

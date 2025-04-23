@@ -8,9 +8,11 @@ from torch.amp import GradScaler, autocast
 import pandas as pd
 from datetime import datetime
 import wandb
+import tempfile
+import concurrent.futures
 from transformers import get_linear_schedule_with_warmup 
 from sentence_transformers import losses
-from modules.ML_data import get_matching, get_relation, get_matching_validation,get_relation_positive_validation, DictBatchSampler
+from modules.ML_data import get_matching, get_relation, get_matching_validation,get_relation_positive_validation, DictBatchSampler, future_tokenize
 from modules.ML_train import get_base_model, auto_save_model, save_best_model, CustomEvaluator
 from modules.TOKENS import TOKENS
 from tqdm.auto import tqdm 
@@ -30,6 +32,8 @@ torch.cuda.is_available()
 
 base_model = 'all-MiniLM-L6-v2'
 base_model_path = f'models/{base_model}'
+base_model_path = f'output/all-MiniLM-L6-v2_2025-04-17_20-01-05/auto_save_274_20250421_112653'
+
 # base_model = 'models/base_exclude_CIEL/checkpoint-65000'
 output_dir = f"output/{base_model}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 
@@ -97,11 +101,11 @@ learning_rate = 2e-5 # Typical default for AdamW with transformers
 
 max_saves = 4
 epoch_num = 5
-best_eval_loss = float('inf')
 
 # --- Initialization ---
-wandb_report_steps = 64
-wandb.init(project="Concept_Mapping", name=output_dir)
+wandb_report_steps = 256
+temp_dir = tempfile.gettempdir()
+wandb.init(project="Concept_Mapping", name=output_dir, dir = temp_dir)
 
 # 1. Model and Tokenizer
 model, tokenizer = get_base_model(base_model_path, special_tokens)
@@ -132,8 +136,8 @@ ratios = {k: ratios[k] for k in ds_names}
 # Determine block_size and shuffle_buffer 
 # These affect how much data the sampler loads/shuffles at once
 # The sampler yields blocks, we process them with mini-batches inside
-shuffle_buffer = mini_batch_size * arg_saving_steps * 2 # As per your code
-sampler_batch_size = 1024 * 16
+sampler_batch_size = mini_batch_size * 256
+shuffle_buffer = sampler_batch_size * 2
 sampler = DictBatchSampler(train_dataset_dict, batch_size=sampler_batch_size, ratios=ratios, shuffle_buffer=shuffle_buffer)
 ds_sizes = sampler.element_size()
 iterations = sampler.iteration_size()
@@ -163,12 +167,26 @@ scaler = GradScaler(device=device_type, enabled=fp16)
 global_step = 0
 current_epoch = -1
 epoch_total_loss = 0.0
+best_eval_accuracy = float('-inf')
 wandb.watch(model) # Log gradients and model topology
 
 
-progress_bar_outer = tqdm(range(num_training_steps), desc="Mini Steps") # Tracks overall progress
 
-for j, data_block in enumerate(sampler):
+if 'executor' in locals():
+    executor.shutdown(wait=False) 
+executor = concurrent.futures.ProcessPoolExecutor(1) 
+
+
+progress_bar_outer = tqdm(range(num_training_steps), desc="Mini Steps")
+j = 0
+it = sampler
+## push the first block to the executor
+data_block_next = next(it)
+future = executor.submit(future_tokenize, tokenizer, data_block_next)
+
+
+while True:
+    data_block = data_block_next
     epoch_i = j // iterations_per_epoch
     if epoch_i >= epoch_num:
         print(f"Target epochs ({epoch_num}) reached. Stopping training.")
@@ -185,22 +203,13 @@ for j, data_block in enumerate(sampler):
             evaluator.build_reference(model, database)
 
     # --- Process the Data Block ---
-    model = model.train() # Set model to training mode for this block
-
-    # Determine number of mini-batches within this block
-    # Assuming data_block is a list of examples
-    sentence1s = data_block['sentence1']
-    sentence2s = data_block['sentence2']
-    labels_list = data_block['label']
+    labels_tensor = torch.tensor(data_block['label'], dtype=torch.float32).to(device)
+    tokenized_sentence1s_block, tokenized_sentence2s_block = future.result()
+    data_block_next = next(it)
+    future = executor.submit(future_tokenize, tokenizer, data_block_next)
     
-    labels_tensor = torch.tensor(labels_list, dtype=torch.float32).to(device)
-    tokenized_sentence1s_block = tokenizer(
-        sentence1s, padding=True, truncation=True, return_tensors="pt"
-    )
-    tokenized_sentence2s_block = tokenizer(
-        sentence2s, padding=True, truncation=True, return_tensors="pt"
-    )
     
+    model = model.train() # Set model to training mode
     num_examples_in_block = len(data_block)
     num_mini_batches = math.ceil(num_examples_in_block / mini_batch_size)
     block_loss = 0.0
@@ -239,7 +248,7 @@ for j, data_block in enumerate(sampler):
         
         global_step += 1
         progress_bar_outer.update(1)
-        progress_bar_outer.set_postfix({"Loss": f"{loss_value.item():.4f}", "Epoch": f"{current_epoch+1}", "Epoch Avg Loss": f"{epoch_avg_loss:.4f}"})
+        progress_bar_outer.set_postfix({"j":j, "Loss": f"{loss_value.item():.4f}", "Epoch": f"{current_epoch+1}", "Epoch Avg Loss": f"{epoch_avg_loss:.4f}"})
         
         if global_step % wandb_report_steps == 0:
             epoch_progress = global_step / iterations_per_epoch
@@ -266,13 +275,15 @@ for j, data_block in enumerate(sampler):
             wandb.log(eval_results, step=global_step)
         print(f"Evaluation results: {eval_metrics}")
         
-        eval_loss = eval_metrics['top 1']
+        eval_accuracy = eval_metrics['top 1']
         # 4. Save Best Model
-        if eval_loss < best_eval_loss:
-            print(f"New best model found! Loss improved from {best_eval_loss:.4f} to {eval_loss:.4f}. Saving...")
-            best_eval_loss = eval_loss
+        if eval_accuracy > best_eval_accuracy:
+            print(f"New best model found! accuracy improved from {best_eval_accuracy:.4f} to {eval_accuracy:.4f}. Saving...")
+            best_eval_accuracy = eval_accuracy
             save_best_model(model, tokenizer, output_dir) # Pass necessary args
-            wandb.log({"eval/best_loss": best_eval_loss}, step=global_step)
+            wandb.log({"eval/best_accuracy": best_eval_accuracy}, step=global_step)
+            
+    j += 1
 
 
 
