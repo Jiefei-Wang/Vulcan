@@ -14,7 +14,7 @@ with open('scripts/data_conversion.py') as f:
 ## TODO: optimize the performance
 with open('scripts/ML_data.py') as f:
     exec(f.read())
-    
+
 
 with open('scripts/ML_data_condition_target.py') as f:
     exec(f.read())
@@ -24,7 +24,7 @@ with open('scripts/ML_data_condition_matching.py') as f:
 
 with open('scripts/ML_data_condition_relation.py') as f:
     exec(f.read())
-    
+
 with open('scripts/ML_FP_condition_matching.py') as f:
     exec(f.read())
 

@@ -37,7 +37,7 @@ def calculate_score(indice):
     if None in indice:
         return 99999
     else:
-        std_num = len(indice)
+        std_num = len(indice) # 3
         scores = max([k - std_num + 2 for k in indice])
         return scores
 
@@ -47,4 +47,3 @@ def performance_metrics(df, k=50):
 
     ## accuracy
     return df['topk'].mean()
-
