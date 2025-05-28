@@ -28,7 +28,7 @@ with open('scripts/ML_data_condition_relation.py') as f:
 with open('scripts/ML_FP_condition_matching.py') as f:
     exec(f.read())
 
-with open('scripts/ML_train2.py') as f:
+with open('scripts/ML_train.py') as f:
     exec(f.read())
 
 
