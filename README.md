@@ -2,3 +2,7 @@
 - ML_data.py: Prepare data for NLP
 - ML_train.py: Train the model
 - test.py: Test the model
+
+
+# UMLS
+- How many concepts get mapped to OMOP? By vocabulary?

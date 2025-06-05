@@ -18,16 +18,26 @@ class TimedLogger:
         self.start_time = time.time()
         self.last_time = self.start_time
 
-    def log(self, message):
+    
+    def _log(self, func, message):
         """Log a message with elapsed time since the start and since the last message."""
         current_time = time.time()
         if self.start_time is None:
             self.reset_timer()
         elapsed_since_start = current_time - self.start_time
         elapsed_since_last = current_time - self.last_time
-        self.logger.info(f"{message} (Elapsed: {elapsed_since_start:.2f}s, Since last: {elapsed_since_last:.2f}s)")
+        func(f"{message} (Elapsed: {elapsed_since_start:.2f}s, Since last: {elapsed_since_last:.2f}s)")
         self.last_time = current_time
     
+    def log(self, message):
+        self._log(self.logger.info, message)
+    
+    def warn(self, message):
+        self._log(self.logger.warning, message)
+        
+    def error(self, message):
+        self._log(self.logger.error, message)
+        
     def done(self):
         self.log("All Jobs Done!")
         self.reset_timer()
