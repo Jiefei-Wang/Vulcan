@@ -1,33 +1,39 @@
 with open('reload_library.py') as f:
     exec(f.read())
 
-########################
-## Convert OMOP and UMLS data to feather format
-## Only need to run this once
-########################
-with open('scripts/data_conversion.py') as f:
-    exec(f.read())
 
 ########################
-## Data management
+## Data Extraction
+## Only need to run once
 ########################
-## TODO: optimize the performance
-with open('scripts/ML_data.py') as f:
+with open('scripts/base_data/1_data_conversion.py') as f:
+    exec(f.read())
+
+with open('scripts/base_data/2_data.py') as f:
     exec(f.read())
 
 
-with open('scripts/ML_data_condition_target.py') as f:
+########################
+## Prepare ML data
+## Only need to run once
+########################
+with open('scripts/ML_data/condition_target.py') as f:
     exec(f.read())
 
-with open('scripts/ML_data_condition_matching.py') as f:
+with open('scripts/ML_data/condition_matching.py') as f:
     exec(f.read())
 
-with open('scripts/ML_data_condition_relation.py') as f:
+with open('scripts/ML_data/condition_relation.py') as f:
     exec(f.read())
 
 with open('scripts/ML_FP_condition_matching.py') as f:
     exec(f.read())
 
+
+
+########################
+## Train
+########################
 with open('scripts/ML_train.py') as f:
     exec(f.read())
 
