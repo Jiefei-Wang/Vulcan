@@ -13,7 +13,7 @@
 
 
 # vocabulary table
-CDOSC:
+CDISC:
 | vocabulary | concept_code |  type | name |
 |------------|--------------|-------|------|
 |   CDISC    |    C62266    |  name  |  ACCELERATED...|
