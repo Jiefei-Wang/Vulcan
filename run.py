@@ -23,11 +23,10 @@ if not os.path.exists('data/mapping_data'):
 with open('scripts/mapping/1_UMLS.py') as f:
     exec(f.read())
 
-
 with open('scripts/mapping/2_omop.py') as f:
     exec(f.read())
 
-with open('scripts/mapping/3_combine.py') as f:
+with open('scripts/mapping/3_train_valid_split.py') as f:
     exec(f.read())
 
 

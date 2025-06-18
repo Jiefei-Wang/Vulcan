@@ -13,7 +13,6 @@ logger.reset_timer()
 logger.log("Getting UMLS definitions")
 
 concept = pd.read_feather('data/omop_feather/concept.feather')
-std_bridge = pd.read_feather("data/omop_feather/std_bridge.feather")
 
 # Load UMLS reference files
 mrconso_df = pd.read_feather("data/UMLS_feather/mrconso_df.feather")

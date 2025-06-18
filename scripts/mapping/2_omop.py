@@ -51,20 +51,13 @@ map_table_OMOP_nonstd = map_table_OMOP_nonstd[['concept_id', 'source', 'source_i
 #######################################
 logger.log("Get concept synonyms from OMOP")
 
-map_table_OMOP_synonyms = concept_synonym[['concept_id', 'concept_synonym_name']].merge(
-    std_bridge,
-    on='concept_id',
-    how='inner'
-)
-
-map_table_OMOP_synonyms = map_table_OMOP_synonyms.rename(
+map_table_OMOP_synonyms = concept_synonym[['concept_id', 'concept_synonym_name']].rename(
     columns={
-        'concept_id': 'source_id',
-        'std_concept_id': 'concept_id',
         'concept_synonym_name': 'name'
     }).drop_duplicates().reset_index(drop=True)
 
 
+map_table_OMOP_synonyms['source_id'] = map_table_OMOP_synonyms['concept_id']
 map_table_OMOP_synonyms['source'] = "OMOP"
 map_table_OMOP_synonyms['type'] = 'synonym'
 map_table_OMOP_synonyms = map_table_OMOP_synonyms[['concept_id', 'source', 'source_id', 'type', 'name']]
