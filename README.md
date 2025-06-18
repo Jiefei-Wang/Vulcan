@@ -21,6 +21,19 @@ CDISC:
 |   CDISC    |    C62266    |  synonym  | Accelerated idioventricular rhythm |
 
 
+# map_table specification
+
+| concept_id | source | source_id | type | name |
+|------------|--------|-----------|------|------|
+|   1        |  umls  |   XX      |  STR |  YY  |
+
+- concept_id: The standard OMOP concept ID
+- source: The source vocabulary of the concept (e.g., 'umls', 'cdisc')
+- source_id: The unique identifier of the concept in the source vocabulary
+- type: The type of the name in the source vocabulary
+- name: The name of the concept in the source vocabulary 
+
+
 # concept mapping design
 
 name_table: each row is a unique name from a particular source
@@ -30,7 +43,7 @@ name_table: each row is a unique name from a particular source
 |   1     |  umls  |   XX      |  STR |  YY  |
 
 
-concept_name_map: each row is a mapping from a concept id to a name_id
+name_bridge: each row is a mapping from a concept id to a name_id
 
 | concept_id | name_id |
 |------------|---------|

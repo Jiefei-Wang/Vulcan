@@ -8,8 +8,7 @@ from tqdm import tqdm
 import pandas as pd
 from modules.timed_logger import logger
 import duckdb
-
-umls_starting_id = 10000*10000*10000
+logger.reset_timer()
 
 logger.log("Getting UMLS definitions")
 
@@ -52,53 +51,21 @@ VOCAB_TO_SAB_MAP = {
 concept_mapped = concept.copy()
 concept_mapped['SAB'] = concept_mapped['vocabulary_id'].map(VOCAB_TO_SAB_MAP)
 
-## remove NAN from SAB
+## remove NAN from SAB (not mapped vocabularies)
 concept_mapped = concept_mapped.dropna(subset=['SAB'])
 
-# Find the CUIs that are used in OMOP
-mrconso_filtered = mrconso_df.merge(
-    concept_mapped[['SAB', 'concept_code', 'concept_id']].drop_duplicates(),
-    left_on=['SAB', 'CODE'],
-    right_on=['SAB', 'concept_code'],
-    how='inner'
-)
-mrconso_filtered['source_id'] = duckdb.query(f"""
-    SELECT CUI || ':' || SAB || ':' || CODE AS generated_source_id
-    FROM mrconso_filtered
-""").df()['generated_source_id']
-
-
-# Create concept to name mapping
-# Concept_id -> SAB + concept_code -> source_id
-concept_name_map_umls = mrconso_filtered[['source_id', 'concept_id']].drop_duplicates().reset_index(drop=True)
-
-
-# create name_id to STR mapping
-# Concept id -> SAB + concept_code -> STR
-name_table_str = mrconso_filtered[['source_id', 'STR']].drop_duplicates().reset_index(drop=True)
-name_table_str['source'] = 'UMLS'
-name_table_str['type'] = 'STR'
-name_table_str['name'] = name_table_str['STR']
-name_table_str = name_table_str[['source_id', 'source', 'type', 'name']]
-
-
-# create name_id to DEF mapping
-# Concept_id -> SAB + concept_code -> CUI -> DEF
-name_table_def = mrdef_df[['CUI', 'DEF']].drop_duplicates().reset_index(drop=True)
-name_table_def = name_table_def.merge(
-    mrconso_filtered[['CUI', 'source_id']],
-    on='CUI',
-    how='inner'
-)
-
-
-
-name_table_def['source'] = 'UMLS'
-name_table_def['type'] = 'DEF'
-name_table_def['name'] = name_table_def['DEF']
-name_table_def = name_table_def.drop_duplicates(subset=['source_id', 'name']).reset_index(drop=True)
-name_table_def = name_table_def[['source_id', 'source', 'type', 'name']]
-
+# Find the CUIs that are used in OMOP and add its concept_id
+mrconso_filtered = duckdb.query(f"""
+    SELECT DISTINCT
+    mrconso.CUI,
+    concept.concept_id,
+    mrconso.STR,
+    mrconso.SAB,
+    mrconso.CUI || ':' || mrconso.SAB || ':' || mrconso.CODE AS source_id
+    FROM mrconso_df as mrconso
+    JOIN concept_mapped as concept
+    ON mrconso.SAB = concept.SAB AND mrconso.CODE = concept.concept_code
+""").df()
 
 
 
@@ -111,19 +78,48 @@ if vocab_keys!=concept_vocabs:
         f"Unable to find definitions for vocabularies: {set_diff}. "
     )
     
-concept_name_map_umls['name_id'] = concept_name_map_umls['source_id'].astype('category').cat.codes + umls_starting_id
 
-name_table_umls = pd.concat([name_table_str, name_table_def], ignore_index=True)
-name_table_umls = name_table_umls.merge(
-    concept_name_map_umls[['source_id', 'name_id']],
-    on='source_id',
+####################
+## UMLS STR names
+####################
+map_table_umls_str = mrconso_filtered[['source_id', 'concept_id','STR']].rename(
+    columns={
+        'STR': 'name'
+    }
+).reset_index(drop=True)
+map_table_umls_str['source'] = 'UMLS'
+map_table_umls_str['type'] = 'STR'
+map_table_umls_str=map_table_umls_str[['concept_id', 'source', 'source_id', 'type', 'name']]
+
+####################
+## UMLS DEF names
+####################
+# Concept_id -> SAB + concept_code -> CUI
+concept_id_CUI_bridge = mrconso_filtered[['CUI', 'concept_id']].drop_duplicates().reset_index(drop=True)
+
+# create name_id to DEF mapping
+# Concept_id -> CUI -> DEF
+map_table_umls_def = mrdef_df[['CUI', 'DEF']].drop_duplicates().reset_index(drop=True)
+map_table_umls_def = map_table_umls_def.merge(
+    concept_id_CUI_bridge,
+    on='CUI',
     how='inner'
+).rename(
+    columns={
+        'DEF': 'name'
+    }
 )
 
-concept_name_map_umls = concept_name_map_umls[['source_id', 'name_id']]
+map_table_umls_def['source_id'] = map_table_umls_def['CUI']  
+map_table_umls_def['source'] = 'UMLS'
+map_table_umls_def['type'] = 'DEF'
+map_table_umls_def = map_table_umls_def[['concept_id', 'source', 'source_id', 'type', 'name']]
 
-concept_name_map_umls.to_feather('data/base_data/concept_name_map_umls.feather')
-# [1926215 rows x 2 columns]
-name_table_umls.to_feather('data/base_data/name_table_umls.feather')
-# [4985807 rows x 5 columns]
 
+
+map_table_umls = pd.concat([map_table_umls_str, map_table_umls_def], ignore_index=True).drop_duplicates(subset=['concept_id', 'name']).reset_index(drop=True)
+    
+
+map_table_umls.to_feather('data/mapping_data/map_table_umls.feather')
+# [4985537 rows x 5 columns]
+logger.done()

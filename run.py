@@ -1,15 +1,33 @@
+import os
+
 with open('reload_library.py') as f:
     exec(f.read())
 
-
 ########################
-## Data Extraction
+## Basic data conversion
 ## Only need to run once
 ########################
 with open('scripts/base_data/1_data_conversion.py') as f:
     exec(f.read())
 
-with open('scripts/base_data/2_data.py') as f:
+
+########################
+## Mapping data
+## Only need to run once
+########################
+# create data/mapping_data
+import os
+if not os.path.exists('data/mapping_data'):
+    os.makedirs('data/mapping_data')
+
+with open('scripts/mapping/1_UMLS.py') as f:
+    exec(f.read())
+
+
+with open('scripts/mapping/2_omop.py') as f:
+    exec(f.read())
+
+with open('scripts/mapping/3_combine.py') as f:
     exec(f.read())
 
 
