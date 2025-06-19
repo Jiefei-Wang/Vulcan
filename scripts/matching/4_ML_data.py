@@ -6,9 +6,10 @@ from tqdm import tqdm
 logger.reset_timer()
 logger.log("")
 
-std_condition_concept = pd.read_feather('data/mapping_data/std_condition_concept.feather')
-condition_matching_name_bridge_train = pd.read_feather("data/mapping_data/condition_matching_name_bridge_train.feather")
-condition_matching_name_table_train = pd.read_feather("data/mapping_data/condition_matching_name_table_train.feather")
+base_path = "data/matching"
+std_condition_concept = pd.read_feather(os.path.join(base_path, 'std_condition_concept.feather'))
+condition_matching_name_bridge_train = pd.read_feather(os.path.join(base_path, 'condition_matching_name_bridge_train.feather'))
+condition_matching_name_table_train = pd.read_feather(os.path.join(base_path, 'condition_matching_name_table_train.feather'))
 
 
 with open('modules/Iterable.py') as f:
@@ -87,7 +88,10 @@ df[['concept_id1', 'concept_id2', 'label', 'iter_id', 'rank']]
 df.iloc[(1000000-30):(1000000-20)][['concept_id1', 'concept_id2', 'label', 'iter_id', 'rank']]
 
 df.groupby(['iter_id']).size().reset_index(name='count')
-
+#           iter_id    count
+# 0  false_positive   654497
+# 1        negative  1602880
+# 2        positive   654497
 
 a=condition_matching_name_bridge_train.merge(
     std_condition_concept[['concept_id', 'concept_name']],

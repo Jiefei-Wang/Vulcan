@@ -7,7 +7,7 @@ logger.log("Combining all map_tables")
 std_bridge = pd.read_feather("data/omop_feather/std_bridge.feather")
 concept= pd.read_feather('data/omop_feather/concept.feather')
 
-base_path = "data/mapping_data"
+base_path = "data/matching"
 map_tables = [
     'map_table_umls.feather',
     'map_table_OMOP.feather',

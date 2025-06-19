@@ -69,7 +69,7 @@ map_table_OMOP = pd.concat(
 ).drop_duplicates(subset=['concept_id', 'name']).reset_index(drop=True)
 
 
-map_table_OMOP.to_feather('data/mapping_data/map_table_OMOP.feather')
+map_table_OMOP.to_feather('data/matching/map_table_OMOP.feather')
 # [5186997 rows x 5 columns]
 
 logger.done()

@@ -119,6 +119,6 @@ map_table_umls_def = map_table_umls_def[['concept_id', 'source', 'source_id', 't
 map_table_umls = pd.concat([map_table_umls_str, map_table_umls_def], ignore_index=True).drop_duplicates(subset=['concept_id', 'name']).reset_index(drop=True)
     
 
-map_table_umls.to_feather('data/mapping_data/map_table_umls.feather')
+map_table_umls.to_feather('data/matching/map_table_umls.feather')
 # [4985537 rows x 5 columns]
 logger.done()

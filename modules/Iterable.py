@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 class PositiveIterable:
     def __init__(self, 
@@ -12,7 +13,7 @@ class PositiveIterable:
         
         Args:
             target_concepts (pd.DataFrame): DataFrame containing target concepts with columns ['concept_id', 'concept_name']
-            name_table (pd.DataFrame): DataFrame containing name mappings with columns ['name_id', 'source', 'source_id', 'type', 'name']
+            name_table (pd.DataFrame): DataFrame containing name mappings with columns ['name_id', 'name']
             name_bridge (pd.DataFrame): DataFrame containing positive samples with columns ['concept_id', 'name_id']
             max_element (int, optional): The maximum number of elements to return for each concept in target_concepts. Defaults to 999999.
             seed (int): Random seed for reproducibility.
@@ -26,8 +27,7 @@ class PositiveIterable:
         self.concept_name_lookup = dict(zip(target_concepts['concept_id'], target_concepts['concept_name']))
         
         # Pre-compute name_id to name info lookup
-        self.name_lookup = dict(zip(name_table['name_id'], 
-                                   zip(name_table['name'], name_table['source_id'])))
+        self.name_lookup = dict(zip(name_table['name_id'], name_table['name']))
         
         # Pre-compute grouped name_bridge by concept_id for efficient iteration
         self.concept_groups = {}
@@ -46,13 +46,13 @@ class PositiveIterable:
                 if name_id not in self.name_lookup:
                     continue
                     
-                name, source_id = self.name_lookup[name_id]
+                name = self.name_lookup[name_id]
                 
                 yield {
                     'sentence1': concept_name,
                     'sentence2': name,
                     'concept_id1': concept_id,
-                    'concept_id2': source_id,
+                    'concept_id2': name_id,
                     'label': 1
                 }
 
@@ -87,7 +87,7 @@ class NegativeIterable:
         
         Args:
             target_concepts (pd.DataFrame): DataFrame containing target concepts with columns ['concept_id', 'concept_name']
-            name_table (pd.DataFrame): DataFrame containing name mappings with columns ['name_id', 'source', 'source_id', 'type', 'name']
+            name_table (pd.DataFrame): DataFrame containing name mappings with columns ['name_id', 'name']
             blacklist_name_bridge (pd.DataFrame): DataFrame containing samples that cannot be paired ['concept_id', 'name_id']
             max_element (int, optional): The maximum number of elements to return for each concept in target_concepts. Defaults to 5.
             seed (int): Random seed for reproducibility.
@@ -102,8 +102,7 @@ class NegativeIterable:
         self.concept_name_lookup = dict(zip(target_concepts['concept_id'], target_concepts['concept_name']))
         
         # Pre-compute name_id to name info lookup
-        self.name_lookup = dict(zip(name_table['name_id'], 
-                                   zip(name_table['name'], name_table['source_id'])))
+        self.name_lookup = dict(zip(name_table['name_id'], name_table['name']))
         
         # Create blacklist map: concept_id -> set of blacklisted name_ids
         blacklist_grouped = blacklist_name_bridge.groupby('concept_id')['name_id'].apply(set).to_dict()
@@ -132,13 +131,13 @@ class NegativeIterable:
             chosen_name_ids = chosen_name_ids[:n_select]
             
             for name_id in chosen_name_ids:
-                name, source_id = self.name_lookup[name_id]
+                name = self.name_lookup[name_id]
                 
                 yield {
                     'sentence1': concept_name,
                     'sentence2': name,
                     'concept_id1': concept_id,
-                    'concept_id2': source_id,
+                    'concept_id2': name_id,
                     'label': 0
                 }
 
@@ -155,93 +154,99 @@ class CombinedIterable:
                  negative_max_element = 5,
                  seed = 42
                  ):
-        iterators = []
+        iterators = {}
+        max_item = {}
         target_concepts = target_concepts.reset_index(drop=True)
         if positive_name_bridge is not None:
-            iterators.append(PositiveIterable(
+            it = PositiveIterable(
                 target_concepts=target_concepts,
                 name_table=name_table,
                 name_bridge=positive_name_bridge,
                 max_element=positive_max_element
-            ))
+            )
+            iterators = iterators | {"positive": it}
+            max_item['positive'] = positive_max_element
             
         if false_positive_name_bridge is not None:
-            iterators.append(FalsePositiveIterable(
+            it = FalsePositiveIterable(
                 target_concepts=target_concepts,
                 name_table=name_table,
                 name_bridge=false_positive_name_bridge,
                 max_element=false_positive_max_element
-            ))
+            )
+            iterators = iterators | {"false_positive": it}
+            max_item['false_positive'] = false_positive_max_element
+            
         if blacklist_name_bridge is not None:
-            iterators.append(NegativeIterable(
+            it = NegativeIterable(
                 target_concepts=target_concepts,
                 name_table=name_table,
                 blacklist_name_bridge=blacklist_name_bridge,
                 max_element=negative_max_element,
                 seed=seed
-            ))
+            )
+            iterators = iterators | {"negative": it}
+            max_item['negative'] = negative_max_element
+            
         self.iterators = iterators
+        self.max_item = max_item
         self.target_rank = {key: val for key, val in zip(target_concepts.concept_id, target_concepts.index)}
     
+    
+    def _check_next_rank(self, iter_name, it):
+        if iter_name not in self.cache:
+            try:
+                item = next(it)
+                concept_id = item['concept_id1']
+                self.cache[iter_name] = item
+                return self.target_rank[concept_id]
+            except StopIteration:
+                return float('inf')  # No more items in this iterator
+        else:
+            item = self.cache[iter_name]
+            concept_id = item['concept_id1']
+            return self.target_rank[concept_id]
+    
+    def _get_next_item(self, iter_name, it):
+        if iter_name not in self.cache:
+            item = next(it)
+        else:
+            item = self.cache[iter_name]
+            del self.cache[iter_name]
+        return item
+    
     def __iter__(self):
-        iters = [iter(it) for it in self.iterators]
-        iter_ranks = [0] * len(iters)
-        current_min_rank = 0
-        stored_values = {}
-        stopped = [False] * len(iters)
+        self.cache = {}
+        iters = {i:iter(it) for i, it in self.iterators.items()}
+        stopped = {i:False for i in self.iterators.keys()}
         
-        while not all(stopped):
-            # Update current minimum rank from active iterators
-            active_ranks = [iter_ranks[i] for i in range(len(iter_ranks)) if not stopped[i] or i in stored_values]
-            if active_ranks:
-                current_min_rank = min(active_ranks)
+        while not all(stopped.values()):
+            ## establish common ranks
+            ranks = {i: self._check_next_rank(i, v) for i, v in iters.items() if not stopped[i]}
+            ranks = {i: r for i, r in ranks.items() if r != float('inf')} 
+            if not ranks: # no active iterators
+                break
             
-            for i, it in enumerate(iters):
+            current_rank = min(ranks.values())
+            
+            for i, v in iters.items():
                 if stopped[i]:
                     continue
-                    
-                # Check if we have a stored value for this iterator
-                if i in stored_values:
-                    item, item_rank = stored_values[i]
-                    if item_rank == current_min_rank:
-                        # Yield stored item if it matches current minimum rank
+                
+                yield_num = 0
+                while self._check_next_rank(i, v) == current_rank and yield_num < self.max_item[i]:
+                    try:
+                        item = self._get_next_item(i, v)
+                        item['iter_id'] = i
+                        item['rank'] = current_rank
+                        yield_num += 1
                         yield item
-                        del stored_values[i]
-                        # Don't try to get new item from this iterator this round
+                    except StopIteration:
+                        stopped[i] = True
                         continue
-                    else:
-                        # Skip this iterator if stored value doesn't match current rank
-                        continue
-                        
-                try:
-                    item = next(it)
-                    concept_id1 = item['concept_id1']
-                    item_rank = self.target_rank[concept_id1]
-                    iter_ranks[i] = item_rank
-                    item['iter_id'] = i  # Store iterator ID for reference 
-                    item['rank'] = item_rank  # Store rank for sorting later
-                    if item_rank == current_min_rank:
-                        # Yield immediately if matches current rank
-                        yield item
-                    else:
-                        # Store the item for later if it doesn't match current rank
-                        stored_values[i] = (item, item_rank)
-                        
-                except StopIteration:
-                    stopped[i] = True
-                    continue  
-            
-            # If no progress is made, increment the minimum rank
-            if all(i in stored_values or stopped[i] for i in range(len(iters))):
-                if stored_values:
-                    current_min_rank = min(rank for _, rank in stored_values.values())
+                
         
-        # After all iterators are stopped, yield any remaining stored values
-        # Sort by rank to maintain order
-        remaining_items = [(item, rank) for item, rank in stored_values.values()]
-        remaining_items.sort(key=lambda x: x[1])  # Sort by rank
-        for item, _ in remaining_items:
-            yield item
+        
         
                  
                  

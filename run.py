@@ -12,21 +12,21 @@ with open('scripts/base_data/1_data_conversion.py') as f:
 
 
 ########################
-## Mapping data
+## matching data
 ## Only need to run once
 ########################
-# create data/mapping_data
+# create data/matching
 import os
-if not os.path.exists('data/mapping_data'):
-    os.makedirs('data/mapping_data')
+if not os.path.exists('data/matching'):
+    os.makedirs('data/matching')
 
-with open('scripts/mapping/1_UMLS.py') as f:
+with open('scripts/matching/1_UMLS.py') as f:
     exec(f.read())
 
-with open('scripts/mapping/2_omop.py') as f:
+with open('scripts/matching/2_omop.py') as f:
     exec(f.read())
 
-with open('scripts/mapping/3_train_valid_split.py') as f:
+with open('scripts/matching/3_train_valid_split.py') as f:
     exec(f.read())
 
 
