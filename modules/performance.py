@@ -1,4 +1,38 @@
 
+from sentence_transformers.evaluation import SentenceEvaluator
+from modules.ChromaVecDB import ChromaVecDB
+from modules.performance import map_concepts, performance_metrics
+
+class CustomEvaluator(SentenceEvaluator):
+    def __init__(self):
+        """
+        Custom evaluator for precision@k and recall@k.
+        
+        Args:
+            model: SentenceTransformer model.
+            chromadb_model: ChromaVecDB model for building the reference.
+            n_results: Number of top results to consider for evaluation.
+        """
+        self.iteration = 0
+        self.db = None
+
+    def build_reference(self, model, reference):
+        """Build the reference ChromaDB."""
+        print("Building reference ChromaDB...")
+        self.db = ChromaVecDB(model=model, name="validation_ref")
+        self.db.empty_collection()
+        self.db.store_concepts(reference, batch_size=5461)
+
+    def __call__(self, query, n_results=50, k_list = [1, 10, 50]):
+        """
+        Evaluate the model and compute precision@k and recall@k.
+        """
+        df_test = map_concepts(self.db, query, n_results=n_results)
+        res = {f"top {k}": performance_metrics(df_test,k=k) for k in k_list}
+        return res
+
+
+
 def find_indices(lst, values):
     return [find_index(lst, value) for value in values]
 
