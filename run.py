@@ -29,6 +29,11 @@ with open('scripts/matching/2_omop.py') as f:
 with open('scripts/matching/3_train_valid_split.py') as f:
     exec(f.read())
 
+# Unit test
+with open('scripts/matching/test_dataset.py') as f:
+    exec(f.read())
+
+
 
 ########################
 ## Prepare ML data

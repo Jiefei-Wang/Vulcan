@@ -49,15 +49,37 @@ pos_ds = PositiveDataset(
     max_elements=2
 )
 
-df = pd.DataFrame(iter(pos_ds))
+df1 = pd.DataFrame(iter(pos_ds))
 # sentence2 should start with the letter in sentence1
-assert all(df['sentence1'].str[0] == df['sentence2'].str[0])
+assert all(df1['sentence1'].str[0] == df1['sentence2'].str[0])
 # sentence2 should be unique
-assert df['sentence2'].is_unique
+assert df1['sentence2'].is_unique
 # label should be all 1
-assert all(df['label'] == 1)
+assert all(df1['label'] == 1)
 # number of elements, a:1, b:2, c:2, d:2
-assert df.groupby('sentence1').size().to_dict() == {'a': 1, 'b': 2, 'c': 2, 'd': 2}
+assert df1.groupby('sentence1').size().to_dict() == {'a': 1, 'b': 2, 'c': 2, 'd': 2}
+
+
+pos_ds_random = PositiveDataset(
+    target_concepts=target_concepts,
+    name_table=name_table,
+    name_bridge=name_bridge,
+    max_elements=2,
+    seed=42
+)
+
+df2 = pd.DataFrame(iter(pos_ds_random))
+# sentence2 should start with the letter in sentence1
+assert all(df2['sentence1'].str[0] == df2['sentence2'].str[0])
+# sentence2 should be unique
+assert df2['sentence2'].is_unique
+# label should be all 1
+assert all(df2['label'] == 1)
+# number of elements, a:1, b:2, c:2, d:2
+assert df2.groupby('sentence1').size().to_dict() == {'a': 1, 'b': 2, 'c': 2, 'd': 2}
+
+## after sorting by sentence1 and sentence2, df1 should not be equal to df2
+assert not df1.sort_values(['sentence1', 'sentence2']).equals(df2.sort_values(['sentence1', 'sentence2']))
 
 ############################
 ## Test NegativeIterable
@@ -97,7 +119,20 @@ assert not all(df['sentence1'].str[0] == df['sentence2'].str[0])
 # number of elements: a: 2, b: 2, c: 2, d: 2
 assert df.groupby('sentence1').size().to_dict() == {'a': 2, 'b': 2, 'c': 2, 'd': 2}
 
+neg_ds_random = neg_ds.shuffle(seed=44)
+df_random = pd.DataFrame(iter(neg_ds_random))
+# sentence2 should not start with the letter in sentence1
+assert not all(df_random['sentence1'].str[0] == df_random['sentence2'].str[0])
+assert df_random.groupby('sentence1').size().to_dict() == {'a': 2, 'b': 2, 'c': 2, 'd': 2}
 
+## after sorting by sentence1 and sentence2, df should not be equal to df_random
+assert not df.sort_values(['sentence1', 'sentence2']).equals(df_random.sort_values(['sentence1', 'sentence2'])) 
+
+
+
+############################
+## Test CombinedDataset
+############################
 df1 = pd.DataFrame({
     "a": [1, 2, 3]
 })
@@ -115,5 +150,9 @@ df = pd.DataFrame(iter(cd))
 assert df.shape == (6, 1)  
 assert df['a'].tolist() == [1, 2, 3, 4, 5, 6] 
 
+cd_random = cd.shuffle(seed=42)
+df_random = pd.DataFrame(iter(cd_random))
+assert df_random.shape == (6, 1)
+# after sorting by 'a', it should be equal to the original df
+assert df.sort_values('a').equals(df_random.sort_values('a'))
 
-cd[:5]

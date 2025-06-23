@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Optional
 
 class BlockTokenizer:
-    def __init__(self, dataset, buffer_size, batch_size, tokenizer, device):
+    def __init__(self, dataset, buffer_size, batch_size, tokenizer, device, max_length=512):
         """
         Initialize BlockTokenizer.
         
@@ -29,6 +29,7 @@ class BlockTokenizer:
         self.batch_size = batch_size
         self.tokenizer = tokenizer
         self.device = device
+        self.max_length = max_length
         
         # Calculate number of blocks and total batches
         self.num_blocks = math.ceil(len(dataset) / buffer_size)
@@ -179,10 +180,10 @@ class BlockTokenizer:
         # Tokenize sentences (keep on CPU)
         labels_tensor = torch.tensor(labels, dtype=torch.float32)
         tokenized_sentence1s = self.tokenizer(
-            sentence1s, padding=True, truncation=True, return_tensors="pt", max_length=512
+            sentence1s, padding=True, truncation=True, return_tensors="pt", max_length=self.max_length
         )
         tokenized_sentence2s = self.tokenizer(
-            sentence2s, padding=True, truncation=True, return_tensors="pt", max_length=512
+            sentence2s, padding=True, truncation=True, return_tensors="pt", max_length=self.max_length
         )
         
         return {

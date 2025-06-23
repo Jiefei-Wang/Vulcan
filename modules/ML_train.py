@@ -179,3 +179,15 @@ def auto_load_model(save_folder):
         return None, None
 
 
+def get_loss(loss_func, block_tokenizer, idx):
+    data_block = block_tokenizer[idx]
+    # --- Process the Data Block ---
+    labels_tensor = data_block['labels']
+    tokenized_sentence1s = data_block['tokenized_sentence1s']
+    tokenized_sentence2s = data_block['tokenized_sentence2s']
+    
+    sentence_pairs = [tokenized_sentence1s, tokenized_sentence2s]
+
+    # Forward pass
+    loss_value = loss_func(sentence_pairs, labels_tensor)
+    return loss_value

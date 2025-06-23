@@ -1,6 +1,8 @@
 import pandas as pd
 import os
 from modules.timed_logger import logger
+from sklearn.model_selection import train_test_split
+
 logger.reset_timer()
 logger.log("Combining all map_tables")
 
@@ -88,11 +90,11 @@ condition_matching_name_table_train.to_feather(os.path.join(base_path, 'conditio
 
 
 ####################
-## Create valid mapping table
+## Create valid and test mapping table
 ## sentence1, sentence2, concept_id1, concept_id2
 ####################
-matching_valid = condition_matching_map_valid[['name', 'source', 'source_id', 'concept_id']].copy()
-condition_matching_valid = matching_valid.merge(
+matching_valid_test = condition_matching_map_valid[['name', 'source', 'source_id', 'concept_id']].copy()
+condition_matching_valid_test = matching_valid_test.merge(
     std_condition_concept[['concept_id', 'concept_name']],
     on = 'concept_id',
     how = 'inner'
@@ -105,9 +107,25 @@ condition_matching_valid = matching_valid.merge(
     }
 )
 
-condition_matching_valid = condition_matching_valid[['sentence1', 'sentence2', 'concept_id1', 'concept_id2']].reset_index(drop=True)
+condition_matching_valid_test = condition_matching_valid_test[['sentence1', 'sentence2', 'concept_id1', 'concept_id2']].reset_index(drop=True)
+
+
+## split the valid and test data
+logger.log("Split valid and test data")
+
+condition_matching_valid, condition_matching_test = train_test_split(
+    condition_matching_valid_test,
+    test_size=0.9,
+    random_state=42,
+    shuffle=True)
+
+condition_matching_valid.reset_index(drop=True, inplace=True)
+condition_matching_test.reset_index(drop=True, inplace=True)
+
 
 condition_matching_valid.to_feather(os.path.join(base_path, 'condition_matching_valid.feather'))
+
+condition_matching_test.to_feather(os.path.join(base_path, 'condition_matching_test.feather'))
 # [30737 rows x 4 columns]
 logger.done()
 
