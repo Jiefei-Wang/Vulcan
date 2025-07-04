@@ -20,6 +20,9 @@ query_df = nonstd_conditions[
     ['concept_id', 'concept_name', 'std_concept_id']
 ][nonstd_conditions['vocabulary_id'] == 'CIEL']
 
+
+# query_df.to_excel('output/tmp/nonstd_conditions.xlsx', index=False)
+
 db = ChromaVecDB(model=model, name='trained_eval', path=None)
 db.empty_collection()
 db.store_concepts(database, batch_size=5461)

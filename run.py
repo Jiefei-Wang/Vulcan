@@ -1,34 +1,62 @@
+import os
+
 with open('reload_library.py') as f:
     exec(f.read())
 
 ########################
-## Convert OMOP and UMLS data to feather format
-## Only need to run this once
+## Basic data conversion
+## Only need to run once
 ########################
-with open('scripts/data_conversion.py') as f:
+with open('scripts/base_data/1_data_conversion.py') as f:
     exec(f.read())
+
 
 ########################
-## Data management
+## matching data
+## Only need to run once
 ########################
-## TODO: optimize the performance
-with open('scripts/ML_data.py') as f:
+# create data/matching
+import os
+if not os.path.exists('data/matching'):
+    os.makedirs('data/matching')
+
+with open('scripts/matching/1_UMLS.py') as f:
+    exec(f.read())
+
+with open('scripts/matching/2_omop.py') as f:
+    exec(f.read())
+
+with open('scripts/matching/3_train_valid_split.py') as f:
+    exec(f.read())
+
+# Unit test
+with open('scripts/matching/test_dataset.py') as f:
     exec(f.read())
 
 
-with open('scripts/ML_data_condition_target.py') as f:
+
+########################
+## Prepare ML data
+## Only need to run once
+########################
+with open('scripts/ML_data/condition_target.py') as f:
     exec(f.read())
 
-with open('scripts/ML_data_condition_matching.py') as f:
+with open('scripts/ML_data/condition_matching.py') as f:
     exec(f.read())
 
-with open('scripts/ML_data_condition_relation.py') as f:
+with open('scripts/ML_data/condition_relation.py') as f:
     exec(f.read())
 
 with open('scripts/ML_FP_condition_matching.py') as f:
     exec(f.read())
 
-with open('scripts/ML_train2.py') as f:
+
+
+########################
+## Train
+########################
+with open('scripts/ML_train.py') as f:
     exec(f.read())
 
 

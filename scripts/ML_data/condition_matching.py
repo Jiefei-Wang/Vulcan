@@ -36,6 +36,12 @@ logger.reset_timer()
 ##########################################
 logger.log("Create positive samples")
 
+all_targets = pd.read_feather('data/ML/all_targets.feather')
+matching_map = pd.read_feather('data/ML/matching_map.feather')
+
+
+
+
 positive_df_matching = generate_matching_positive_samples(
     df = std_target
     )

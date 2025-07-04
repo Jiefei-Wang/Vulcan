@@ -1,8 +1,12 @@
-## This script convert the OMOP concept from csv to feather format
-## Key modifications:
-##  1. Add a column 'std_concept_id' to the concept table.
-##  2. Remove the concept with no mapping to standard concept.
+# This script 
+#   - convert the OMOP concept from csv to feather format
+#   - conceptEX: add a column 'std_concept_id_list'
+#       - keeps all concepts, setting std_concept_id_list to [] for unmapped
+#   - Create a conceptEX table that contains std_concept_id_list column
+#   - convert the UMLS concept from csv to feather format
 import pandas as pd
+import numpy as np
+import duckdb
 import os
 from modules.timed_logger import logger
 logger.reset_timer()
@@ -34,36 +38,17 @@ len(concept) # 9683303
 len(std_concepts) # 3490518
 len(nonstd_concepts) # 6192785
 
-## merge nonstd_conditions with concept_relationship to get the standard_concept_id
-std_map = concept_relationship[concept_relationship.relationship_id=='Maps to'][['concept_id_1', 'concept_id_2']].rename(columns={'concept_id_2': 'std_concept_id'})
-
-## map, for multple mappings, combine them into a list
-conceptEX = concept.merge(
-    std_map, left_on='concept_id', right_on='concept_id_1', 
-    how='left'
-    ).drop(columns=['concept_id_1'])
-
-conceptEX['std_concept_id'] = conceptEX['std_concept_id'].astype('Int64')
-
-
-## group by concept_id and combine the standard_concept_id into a list
-conceptEX = conceptEX.groupby('concept_id'
-    ).agg({
-        'concept_name': 'first',
-        'domain_id': 'first',
-        'vocabulary_id': 'first',
-        'concept_class_id': 'first',
-        'standard_concept': 'first',
-        'concept_code': 'first',
-        'valid_start_date': 'first',
-        'valid_end_date': 'first',
-        'invalid_reason': 'first',
-        'std_concept_id': lambda x: list(x)}
-    ).reset_index()
+# nonstd to std mapping
+std_bridge = concept_relationship[concept_relationship.relationship_id=='Maps to'][['concept_id_1', 'concept_id_2']].rename(
+    columns={
+        'concept_id_1': 'concept_id',
+        'concept_id_2': 'std_concept_id'
+        }
+    )
 
 
 ## Combine the standard and non-standard concepts
-conceptEX.to_feather(os.path.join(omop_clean_root, 'conceptEX.feather'))
+std_bridge.to_feather(os.path.join(omop_clean_root, 'std_bridge.feather'))
 
 
 
@@ -103,7 +88,8 @@ umls_def_path = os.path.join(umls_root, 'MRDEF.RRF')
 mrconso = read_mrconso(mrconso_path) # Reads UMLS concept names and relationships
 mrdef_df = read_mrdef(umls_def_path) # Reads UMLS concept definitions
 
-mrconso_df = mrconso[['CUI', 'SAB', 'CODE']]
+mrconso_df = mrconso[['CUI', 'SAB', 'CODE', 'STR']]
+
 
 ## create if not exist
 if not os.path.exists(umls_clean_root):
