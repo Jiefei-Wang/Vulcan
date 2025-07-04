@@ -64,6 +64,7 @@ fp_matching['label'] = 0
 #################################
 ## Creating datasets
 #################################
+# error: cannot use matching_pos[1:5]
 matching_pos = PositiveDataset(
     target_concepts=target_concepts,
     name_table=name_table,
@@ -72,6 +73,7 @@ matching_pos = PositiveDataset(
     seed=seed
 )
 
+## error: cannot print
 matching_neg = NegativeDataset(
     target_concepts=target_concepts,
     name_table=name_table,
@@ -80,11 +82,13 @@ matching_neg = NegativeDataset(
     seed=seed
 )
 
+
 ds_all = CombinedDataset(
     positive= matching_pos,
     negative= matching_neg,
     false_positive=fp_matching
 )
+
 
 ds_all=ds_all.shuffle(seed=seed)
 

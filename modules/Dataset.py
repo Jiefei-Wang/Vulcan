@@ -17,9 +17,12 @@ class PositiveDataset(Dataset):
         self.concept_id_2_name = {i:v for i, v in zip(self.target_concepts['concept_id'], self.target_concepts['concept_name'])}
         self.name_id_2_name = {i:v for i, v in zip(self.name_table['name_id'], self.name_table['name'])}
         
-        self.shuffle(seed)
+        self.resample(seed)
         
-    def shuffle(self, seed=None):
+    def resample(self, seed=None):
+        """
+        Resample the dataset to give each concept_id has randomly selected max_elements entries.
+        """
         # for bridge, group by concept_id and only keep the first max_elements entries
         if seed is None:
             self.filtered_bridge = self.name_bridge.groupby('concept_id').head(self.max_elements)
@@ -57,18 +60,20 @@ class NegativeDataset(Dataset):
         self.all_concept_ids = target_concepts['concept_id'].values
         self.all_name_ids = name_table['name_id'].values
         
-        
         self.concept_id_2_name = {i:v for i, v in zip(self.target_concepts['concept_id'], self.target_concepts['concept_name'])}
         
         self.name_id_2_name = {i:v for i, v in zip(self.name_table['name_id'], self.name_table['name'])}
         
         # Create blacklist map: concept_id -> set of blacklisted name_ids
         self.blacklist_map = blacklist_bridge.groupby('concept_id')['name_id'].apply(set).to_dict()
-        self.shuffle(seed)
+        self.resample(seed)
         
-    
-    def shuffle(self, seed=42):
-        ## create a dataframe maps concept_id to randomly selected name_id
+    def resample(self, seed=None):
+        """
+        Resample the dataset to give each concept_id has randomly selected max_elements entries.
+        """
+        if seed is None:
+            seed = 0
         rng = np.random.default_rng(seed)
         bridge = pd.DataFrame({
             'concept_id': np.repeat(self.all_concept_ids, self.max_elements),
@@ -139,6 +144,12 @@ class NegativeDataset(Dataset):
 
 class CombinedDataset():
     def __init__(self, **kwargs):
+        """
+        Combines multiple datasets into a single dataset.
+        
+        Args:
+            **kwargs: Datasets to combine, where keys are dataset names and values are dataset objects. The dataset can be pd.DataFrame or any other object that supports [] indexing.
+        """
         self.datasets = kwargs
         self.names = list(self.datasets.keys())
         self.lengths = [len(self.datasets[name]) for name in self.names]
@@ -160,8 +171,6 @@ class CombinedDataset():
     
     def _get_single_item(self, idx):
         _idx = self.index_mapping[idx]
-        if _idx < 0:
-            _idx = self.total_length + _idx
         if _idx < 0 or _idx >= self.total_length:
             raise IndexError("Index out of range")
             
@@ -175,13 +184,16 @@ class CombinedDataset():
         raise IndexError("Index out of range")
     
     def shuffle(self, seed=None):
+        """
+        Shuffle the dataset indices based on the provided seed. If no seed is provided, the dataset will be restored to its original order.
+        """
         if seed is None:
             self.index_mapping = np.arange(self.total_length)
         else:
-            for name, dataset in self.datasets.items():
-                if isinstance(dataset, PositiveDataset) or isinstance(dataset, NegativeDataset):
-                    dataset = dataset.shuffle(seed)
-                    self.datasets[name] = dataset
+            # for name, dataset in self.datasets.items():
+            #     if isinstance(dataset, PositiveDataset) or isinstance(dataset, NegativeDataset):
+            #         dataset = dataset.shuffle(seed)
+            #         self.datasets[name] = dataset
             self.index_mapping = np.random.default_rng(seed).permutation(self.total_length)
         
         self.seed = seed

@@ -3,8 +3,6 @@ from modules.Dataset import *
 
 with open('modules/Dataset.py') as f:
     exec(f.read())
-    
-
 
 target_concepts = pd.DataFrame({
     'concept_id': [101, 102, 103, 104],
@@ -119,7 +117,7 @@ assert not all(df['sentence1'].str[0] == df['sentence2'].str[0])
 # number of elements: a: 2, b: 2, c: 2, d: 2
 assert df.groupby('sentence1').size().to_dict() == {'a': 2, 'b': 2, 'c': 2, 'd': 2}
 
-neg_ds_random = neg_ds.shuffle(seed=44)
+neg_ds_random = neg_ds.resample(seed=44)
 df_random = pd.DataFrame(iter(neg_ds_random))
 # sentence2 should not start with the letter in sentence1
 assert not all(df_random['sentence1'].str[0] == df_random['sentence2'].str[0])
