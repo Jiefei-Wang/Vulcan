@@ -15,18 +15,10 @@ with open('scripts/base_data/1_data_conversion.py') as f:
 ## matching data
 ## Only need to run once
 ########################
-# create data/matching
-import os
-if not os.path.exists('data/matching'):
-    os.makedirs('data/matching')
-
-with open('scripts/matching/1_UMLS.py') as f:
+with open('scripts/matching/1_extract.py') as f:
     exec(f.read())
 
-with open('scripts/matching/2_omop.py') as f:
-    exec(f.read())
-
-with open('scripts/matching/3_train_valid_split.py') as f:
+with open('scripts/matching/2_train_valid_split.py') as f:
     exec(f.read())
 
 # Unit test

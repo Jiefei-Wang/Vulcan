@@ -1,6 +1,8 @@
+from modules.FalsePositives import get_false_positives
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
+
 
 
 
@@ -137,10 +139,50 @@ class NegativeDataset(Dataset):
 
     def __str__(self):
         ## show the total length
-        return f"PositiveDataset(length={len(self)}, label={self.label}, seed={self.seed})"
+        return f"PositiveDataset(length={len(self)}, seed={self.seed})"
     
     def __repr__(self):
         return self.__str__()
+
+
+class FalsePositiveDataset():
+    def __init__(self, target_concepts, n_fp_matching = 50, existing_path=None):
+        if existing_path is not None:
+            fp_matching = pd.read_feather(existing_path)
+            fp_matching = fp_matching[['sentence1', 'sentence2']].copy()
+            fp_matching['label'] = 0
+            self.fp_matching = fp_matching
+        self.target_concepts = target_concepts.copy()
+        self.n_fp_matching = n_fp_matching
+        
+    def resample(self, model=None):
+        fp_matching = get_false_positives(
+            model=model,
+            target_concepts = self.target_concepts,
+            n_fp_matching = self.n_fp_matching
+        )
+        fp_matching = fp_matching[['sentence1', 'sentence2']].copy()
+        fp_matching['label'] = 0
+        
+        self.fp_matching = fp_matching
+    
+    def __len__(self):
+        return len(self.fp_matching)
+    
+    def __getitem__(self, idx):
+        if isinstance(idx, slice):
+            # Handle slice objects
+            return self.fp_matching.iloc[idx].to_dict(orient='records')
+        else:
+            return self.fp_matching.iloc[idx].to_dict()
+    
+    def __str__(self):
+        return f"FalsePositiveDataset(length={len(self)}, n_fp_matching={self.n_fp_matching})"
+    
+    def __repr__(self):
+        return self.__str__()
+        
+
 
 class CombinedDataset():
     def __init__(self, **kwargs):
@@ -198,7 +240,15 @@ class CombinedDataset():
         
         self.seed = seed
         return self
-        
+    
+    def resample(self, seed=None):
+        for name, dataset in self.datasets.items():
+            ## check if it has a resample method
+            if hasattr(dataset, 'resample'):
+                dataset = dataset.resample(seed)
+                self.datasets[name] = dataset
+        return self    
+    
     def __str__(self):
         return f"CombinedDataset(length={len(self)}, datasets={self.names}, seed={self.seed})"
     

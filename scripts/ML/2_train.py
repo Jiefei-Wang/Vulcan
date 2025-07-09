@@ -1,7 +1,8 @@
 import os
 os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
-import math
+from modules.FalsePositives import get_false_positives
 
+import math
 import numpy as np
 import pandas as pd
 import wandb
@@ -19,8 +20,7 @@ from modules.ML_train import auto_load_model, auto_save_model, save_best_model, 
 from modules.BlockTokenizer import BlockTokenizer
 from modules.TOKENS import TOKENS
 from modules.timed_logger import logger
-from modules.Dataset import PositiveDataset, NegativeDataset, CombinedDataset
-from modules.FalsePositives import get_false_positives
+from modules.Dataset import PositiveDataset, NegativeDataset, FalsePositiveDataset, CombinedDataset
 logger.reset_timer()
 
 
@@ -47,24 +47,9 @@ name_bridge = pd.read_feather(os.path.join(base_path, 'condition_matching_name_b
 name_table = pd.read_feather(os.path.join(base_path, 'condition_matching_name_table_train.feather'))
 
 
-
-fp_path = os.path.join(base_path, f'fp_matching_{n_fp_matching}.feather')
-if not os.path.exists(fp_path):
-    logger.log("Generating false positive matching samples")
-    fp_matching = get_false_positives(
-        model=auto_load_model(ST_model_path)[0],
-        target_concepts=target_concepts,
-        n_fp_matching=n_fp_matching
-    )
-    fp_matching.to_feather(fp_path)
-else:
-    fp_matching = pd.read_feather(os.path.join(base_path, f'fp_matching_{n_fp_matching}.feather'))
-fp_matching = fp_matching[['sentence1', 'sentence2']].copy()
-fp_matching['label'] = 0
 #################################
 ## Creating datasets
 #################################
-# error: cannot use matching_pos[1:5]
 matching_pos = PositiveDataset(
     target_concepts=target_concepts,
     name_table=name_table,
@@ -73,7 +58,6 @@ matching_pos = PositiveDataset(
     seed=seed
 )
 
-## error: cannot print
 matching_neg = NegativeDataset(
     target_concepts=target_concepts,
     name_table=name_table,
@@ -83,17 +67,31 @@ matching_neg = NegativeDataset(
 )
 
 
+
+fp_path = os.path.join(base_path, f'fp_matching_{n_fp_matching}.feather')
+
+matching_fp = FalsePositiveDataset(
+    target_concepts=target_concepts,
+    n_fp_matching=n_fp_matching,
+    existing_path=fp_path
+)
+
 ds_all = CombinedDataset(
     positive= matching_pos,
     negative= matching_neg,
-    false_positive=fp_matching
+    false_positive=matching_fp
 )
 
-
-ds_all=ds_all.shuffle(seed=seed)
-
-for i in tqdm(ds_all):
+ds_all[0]
+for i in tqdm(range(len(ds_all))):
+    if i == 8668897:
+        x = ds_all[i]  
     pass
+len(ds_all)
+# 8668897/10271679
+# matching_fp.resample(model)
+
+# ds_all=ds_all.shuffle(seed=seed)
 
 #################################
 ## For validation
@@ -177,12 +175,15 @@ best_eval_accuracy = float('-inf')
 wandb.watch(model) # Log gradients and model topology
 
 
-
-
 progress_bar = tqdm(total=len(block_tokenizer) * epoch_num, desc="Training Progress", unit="batch")
 for epoch_i in range(epoch_num):
     # evaluator.build_reference(model, std_condition_concept)  
     epoch_total_loss = 0.0
+    ds_all = ds_all.resample(seed=epoch_i)
+    ds_all=ds_all.shuffle(seed=epoch_i)
+    
+    
+    
     for batch_i in range(len(block_tokenizer)):
         global_step += 1
         

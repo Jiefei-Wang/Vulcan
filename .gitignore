@@ -176,3 +176,4 @@ wandb/*
 
 output/*
 scripts/test.py
+.vscode/launch.json
