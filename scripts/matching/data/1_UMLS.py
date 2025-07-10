@@ -66,7 +66,7 @@ mrconso_filtered = duckdb.query(f"""
     ON mrconso.SAB = concept.SAB AND mrconso.CODE = concept.concept_code
 """).df()
 
-
+# mrconso_df[mrconso_df.CODE=="LA4543-0"]
 
 ## Check if all VOCAB_TO_SAB_MAP items have been used
 vocab_keys = set(VOCAB_TO_SAB_MAP.values())
@@ -89,6 +89,7 @@ map_table_umls_str = mrconso_filtered[['source_id', 'concept_id','STR']].rename(
 map_table_umls_str['source'] = 'UMLS'
 map_table_umls_str['type'] = 'STR'
 map_table_umls_str=map_table_umls_str[['concept_id', 'source', 'source_id', 'type', 'name']]
+# map_table_umls_str[map_table_umls_str.concept_id == 45880107]
 
 ####################
 ## UMLS DEF names
@@ -120,5 +121,6 @@ map_table_umls = pd.concat([map_table_umls_str, map_table_umls_def], ignore_inde
     
 
 map_table_umls.to_feather('data/matching/map_table_umls.feather')
+
 # [4985537 rows x 5 columns]
 logger.done()
