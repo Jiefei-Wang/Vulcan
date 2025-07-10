@@ -26,10 +26,12 @@ logger.reset_timer()
 
 
 # --- Initialization ---
+logger.log("Loading Model")
 output_dir = f"output/finetune/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 base_model = 'ClinicalBERT'
 ST_model_path = f'models/{base_model}_ST'
 
+model, tokenizer = auto_load_model(ST_model_path)
 #################################
 ## Load training data
 #################################
@@ -43,6 +45,7 @@ n_neg_relation = 50
 n_fp_matching = 10
 
 target_concepts = pd.read_feather(os.path.join(base_path, 'std_condition_concept.feather'))
+std_bridge = pd.read_feather("data/omop_feather/std_bridge.feather")
 name_bridge = pd.read_feather(os.path.join(base_path, 'condition_matching_name_bridge_train.feather'))
 name_table = pd.read_feather(os.path.join(base_path, 'condition_matching_name_table_train.feather'))
 
@@ -73,8 +76,10 @@ fp_path = os.path.join(base_path, f'fp_matching_{n_fp_matching}.feather')
 matching_fp = FalsePositiveDataset(
     target_concepts=target_concepts,
     n_fp_matching=n_fp_matching,
+    std_bridge =std_bridge,
     existing_path=fp_path
 )
+matching_fp.add_model(model)
 
 ds_all = CombinedDataset(
     positive= matching_pos,
@@ -82,12 +87,12 @@ ds_all = CombinedDataset(
     false_positive=matching_fp
 )
 
-ds_all[0]
-for i in tqdm(range(len(ds_all))):
-    if i == 8668897:
-        x = ds_all[i]  
-    pass
-len(ds_all)
+
+# for i in tqdm(range(len(ds_all))):
+#     if i == 8668897:
+#         x = ds_all[i]  
+#     pass
+# len(ds_all)
 # 8668897/10271679
 # matching_fp.resample(model)
 
@@ -109,10 +114,9 @@ matching_valid_ds = CombinedDataset(
 #################################
 ## Model
 #################################
-logger.log("Loading model")
+logger.log("Model settings")
 fp16 = True # Use Mixed Precision (Float16)
 learning_rate = 2e-5 # Typical default for AdamW with transformers
-model, tokenizer = auto_load_model(ST_model_path)
 max_length = 512 # Maximum length for tokenization
 # evaluator = CustomEvaluator()
 max_saves = 4
@@ -179,10 +183,10 @@ progress_bar = tqdm(total=len(block_tokenizer) * epoch_num, desc="Training Progr
 for epoch_i in range(epoch_num):
     # evaluator.build_reference(model, std_condition_concept)  
     epoch_total_loss = 0.0
-    ds_all = ds_all.resample(seed=epoch_i)
-    ds_all=ds_all.shuffle(seed=epoch_i)
     
-    
+    if epoch_i > 0:
+        ds_all = ds_all.resample(seed=epoch_i)
+        ds_all = ds_all.shuffle(seed=epoch_i)
     
     for batch_i in range(len(block_tokenizer)):
         global_step += 1
@@ -203,11 +207,11 @@ for epoch_i in range(epoch_num):
         epoch_avg_loss = epoch_total_loss / (batch_i + 1)
 
         info = {
-            "Global Step": global_step,
+            "Global": global_step,
             "Epoch": epoch_i,
             "Batch": batch_i,
-            "Loss": f"{loss_value.item():.4f}",
-            "Avg Loss": f"{epoch_avg_loss:.4f}"
+            "Loss": loss_value.item(),
+            "Avg Loss": epoch_avg_loss
         }
         progress_bar.set_postfix(info)
         progress_bar.update(1)

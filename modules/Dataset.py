@@ -25,11 +25,13 @@ class PositiveDataset(Dataset):
         """
         Resample the dataset to give each concept_id has randomly selected max_elements entries.
         """
+        filtered_bridge = self.name_bridge[self.name_bridge['concept_id'].isin(self.target_concepts['concept_id'])]
         # for bridge, group by concept_id and only keep the first max_elements entries
         if seed is None:
-            self.filtered_bridge = self.name_bridge.groupby('concept_id').head(self.max_elements)
+            filtered_bridge = filtered_bridge.groupby('concept_id').head(self.max_elements)
         else:
-            self.filtered_bridge = self.name_bridge.sample(frac=1, random_state=seed).groupby('concept_id').head(self.max_elements)
+            filtered_bridge = filtered_bridge.sample(frac=1, random_state=seed).groupby('concept_id').head(self.max_elements)
+        self.filtered_bridge = filtered_bridge.reset_index(drop=True)
         self.seed = seed
         return self
         
@@ -146,25 +148,31 @@ class NegativeDataset(Dataset):
 
 
 class FalsePositiveDataset():
-    def __init__(self, target_concepts, n_fp_matching = 50, existing_path=None):
+    def __init__(self, target_concepts, std_bridge, n_fp_matching = 50, existing_path=None):
         if existing_path is not None:
             fp_matching = pd.read_feather(existing_path)
             fp_matching = fp_matching[['sentence1', 'sentence2']].copy()
             fp_matching['label'] = 0
             self.fp_matching = fp_matching
         self.target_concepts = target_concepts.copy()
+        self.std_bridge = std_bridge.copy()
         self.n_fp_matching = n_fp_matching
         
-    def resample(self, model=None):
+    def add_model(self, model):
+        self.model = model
+    
+    def resample(self, seed=None):
         fp_matching = get_false_positives(
-            model=model,
+            model=self.model,
             target_concepts = self.target_concepts,
+            std_bridge = self.std_bridge,
             n_fp_matching = self.n_fp_matching
         )
         fp_matching = fp_matching[['sentence1', 'sentence2']].copy()
         fp_matching['label'] = 0
         
         self.fp_matching = fp_matching
+        return self
     
     def __len__(self):
         return len(self.fp_matching)
@@ -247,6 +255,10 @@ class CombinedDataset():
             if hasattr(dataset, 'resample'):
                 dataset = dataset.resample(seed)
                 self.datasets[name] = dataset
+        
+        self.lengths = [len(self.datasets[name]) for name in self.names]
+        self.partial_lengths = np.cumsum(self.lengths)
+        self.total_length = sum(self.lengths)
         return self    
     
     def __str__(self):
