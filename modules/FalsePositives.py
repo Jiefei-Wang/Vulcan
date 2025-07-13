@@ -18,23 +18,9 @@ from modules.ChromaVecDB import ChromaVecDB
 from modules.ML_train import auto_load_model
 from modules.timed_logger import logger
 
-if False:
-    n_fp_matching = 10
-    base_path = "data/matching"
-    std_condition_concept = pd.read_feather(os.path.join(base_path, 'std_condition_concept.feather'))
-    std_bridge = pd.read_feather("data/omop_feather/std_bridge.feather")
-
-    target_concepts = std_condition_concept
-
-    base_model = 'ClinicalBERT'
-    ST_model_path = f'models/{base_model}_ST'
-    model, tokenizer = auto_load_model(ST_model_path)
-    
-    fp = get_false_positives(model, target_concepts, std_bridge,  n_fp_matching=n_fp_matching)
-    fp.to_feather(os.path.join(base_path, f'fp_matching_{n_fp_matching}.feather'))
 
 # n_fp_matching = 50
-def get_false_positives(model, target_concepts, std_bridge, n_fp_matching = 50):
+def get_false_positives(model, target_concepts, n_fp_matching = 50):
     logger.reset_timer()
     ####################################
     ## Work on conditions domain
@@ -58,22 +44,15 @@ def get_false_positives(model, target_concepts, std_bridge, n_fp_matching = 50):
     candidate_fp['maps_to'] = [[int(i) for i in x] for x in results['ids']]
     candidate_fp['distance'] = results['distances']
     candidate_fp = candidate_fp.explode(['maps_to', 'distance'], ignore_index=False)
-
+    
+    
     ## For each concept_id, sort by distance and keep the first n_fp_matching entries
     candidate_fp = duckdb.query(f"""
-        -- Remove candidates that are the non-standard concept of the standard concept
-        WITH candidate_fp2 AS (
-            SELECT cf.*
-            FROM candidate_fp cf
-            ANTI JOIN std_bridge sb 
-            ON cf.concept_id = sb.std_concept_id 
-            AND cf.maps_to = sb.concept_id
-        ),
         -- Rank candidates by distance for each concept_id
-        ranked_candidates AS (
+        WITH ranked_candidates AS (
         SELECT *,
                 ROW_NUMBER() OVER (PARTITION BY concept_id ORDER BY distance) AS rn
-        FROM candidate_fp2
+        FROM candidate_fp
         ),
         -- Select the top n_fp_matching candidates for each concept_id
         -- while removing 0 distance candidates

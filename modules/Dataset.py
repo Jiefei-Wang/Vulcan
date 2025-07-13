@@ -148,14 +148,13 @@ class NegativeDataset(Dataset):
 
 
 class FalsePositiveDataset():
-    def __init__(self, target_concepts, std_bridge, n_fp_matching = 50, existing_path=None):
+    def __init__(self, target_concepts, n_fp_matching = 50, existing_path=None):
         if existing_path is not None:
             fp_matching = pd.read_feather(existing_path)
             fp_matching = fp_matching[['sentence1', 'sentence2']].copy()
             fp_matching['label'] = 0
             self.fp_matching = fp_matching
         self.target_concepts = target_concepts.copy()
-        self.std_bridge = std_bridge.copy()
         self.n_fp_matching = n_fp_matching
         
     def add_model(self, model):
@@ -165,7 +164,6 @@ class FalsePositiveDataset():
         fp_matching = get_false_positives(
             model=self.model,
             target_concepts = self.target_concepts,
-            std_bridge = self.std_bridge,
             n_fp_matching = self.n_fp_matching
         )
         fp_matching = fp_matching[['sentence1', 'sentence2']].copy()

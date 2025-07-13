@@ -18,11 +18,11 @@ with open('scripts/base_data/1_data_conversion.py') as f:
 with open('scripts/matching/1_extract.py') as f:
     exec(f.read())
 
-with open('scripts/matching/2_train_valid_split.py') as f:
+with open('scripts/matching/2_train_valid_split.py', encoding="UTF-8") as f:
     exec(f.read())
 
 # Unit test
-with open('scripts/matching/test_dataset.py') as f:
+with open('scripts/matching/test_dataset.py', encoding="UTF-8") as f:
     exec(f.read())
 
 
@@ -31,17 +31,17 @@ with open('scripts/matching/test_dataset.py') as f:
 ## Prepare ML data
 ## Only need to run once
 ########################
-with open('scripts/ML_data/condition_target.py') as f:
+with open('scripts/ML/1_model.py') as f:
     exec(f.read())
 
-with open('scripts/ML_data/condition_matching.py') as f:
+
+with open('scripts/ML/2_init_false_positive.py') as f:
     exec(f.read())
 
-with open('scripts/ML_data/condition_relation.py') as f:
+
+with open('scripts/ML/3_train.py') as f:
     exec(f.read())
 
-with open('scripts/ML_FP_condition_matching.py') as f:
-    exec(f.read())
 
 
 

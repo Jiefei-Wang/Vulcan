@@ -42,10 +42,9 @@ seed = 42
 n_pos_matching = 10
 n_neg_matching = 50
 n_neg_relation = 50
-n_fp_matching = 10
+n_fp_matching = 50
 
 target_concepts = pd.read_feather(os.path.join(base_path, 'std_condition_concept.feather'))
-std_bridge = pd.read_feather("data/omop_feather/std_bridge.feather")
 name_bridge = pd.read_feather(os.path.join(base_path, 'condition_matching_name_bridge_train.feather'))
 name_table = pd.read_feather(os.path.join(base_path, 'condition_matching_name_table_train.feather'))
 
@@ -76,7 +75,6 @@ fp_path = os.path.join(base_path, f'fp_matching_{n_fp_matching}.feather')
 matching_fp = FalsePositiveDataset(
     target_concepts=target_concepts,
     n_fp_matching=n_fp_matching,
-    std_bridge =std_bridge,
     existing_path=fp_path
 )
 matching_fp.add_model(model)
@@ -179,7 +177,7 @@ best_eval_accuracy = float('-inf')
 wandb.watch(model) # Log gradients and model topology
 
 
-progress_bar = tqdm(total=len(block_tokenizer) * epoch_num, desc="Training Progress", unit="batch")
+progress_bar = tqdm(total=len(block_tokenizer) * epoch_num)
 for epoch_i in range(epoch_num):
     # evaluator.build_reference(model, std_condition_concept)  
     epoch_total_loss = 0.0
@@ -207,11 +205,11 @@ for epoch_i in range(epoch_num):
         epoch_avg_loss = epoch_total_loss / (batch_i + 1)
 
         info = {
-            "Global": global_step,
-            "Epoch": epoch_i,
-            "Batch": batch_i,
+            "total": global_step,
             "Loss": loss_value.item(),
-            "Avg Loss": epoch_avg_loss
+            "Avg Loss": epoch_avg_loss,
+            "Epoch": epoch_i,
+            "Batch": batch_i
         }
         progress_bar.set_postfix(info)
         progress_bar.update(1)

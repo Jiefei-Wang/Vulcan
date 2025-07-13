@@ -152,5 +152,5 @@ cd_random = cd.shuffle(seed=42)
 df_random = pd.DataFrame(iter(cd_random))
 assert df_random.shape == (6, 1)
 # after sorting by 'a', it should be equal to the original df
-assert df.sort_values('a').equals(df_random.sort_values('a'))
+assert df.sort_values('a').reset_index(drop=True).equals(df_random.sort_values('a').reset_index(drop=True))
 
