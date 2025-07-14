@@ -15,7 +15,7 @@ from datetime import datetime
 from transformers import get_linear_schedule_with_warmup 
 from sentence_transformers import SentenceTransformerTrainer, losses
 
-from modules.ModelFunctions import auto_save_model, save_best_model, get_loss, get_base_model, load_ST_model
+from modules.ModelFunctions import auto_save_model, save_best_model, get_loss, get_base_model, get_ST_model
 from modules.BlockTokenizer import BlockTokenizer
 from modules.TOKENS import TOKENS
 from modules.timed_logger import logger
@@ -29,7 +29,7 @@ logger.log("Loading Model")
 output_dir = f"output/finetune/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 base_model = 'ClinicalBERT'
 
-model, tokenizer = load_ST_model(base_model)
+model, tokenizer = get_ST_model(base_model)
 #################################
 ## Load training data
 #################################

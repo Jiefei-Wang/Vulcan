@@ -198,7 +198,7 @@ def get_loss(loss_func, block_tokenizer, idx):
 
 
 
-def load_ST_model(base_model = 'ClinicalBERT'):
+def get_ST_model(base_model = 'ClinicalBERT'):
     """
     Load a SentenceTransformer model or create a new one if it doesn't exist. The model will be saved and reused in the future.
     """

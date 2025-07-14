@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-from modules.ModelFunctions import load_ST_model
+from modules.ModelFunctions import get_ST_model
 from modules.CodeBlockExecutor import trace, tracedf
 from modules.FalsePositives import get_false_positives
 
@@ -19,7 +19,7 @@ tracedf(target_concepts)
 
 
 base_model = 'ClinicalBERT'
-model, tokenizer = load_ST_model(base_model)
+model, tokenizer = get_ST_model(base_model)
 
 fp = get_false_positives(
     model=model,

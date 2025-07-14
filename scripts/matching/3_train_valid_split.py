@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 from modules.CodeBlockExecutor import trace, tracedf
 import duckdb
 from modules.FaissDB import build_index, is_initialized, search_similar
-from modules.ModelFunctions import load_ST_model
+from modules.ModelFunctions import get_ST_model
 
 logger.reset_timer()
 logger.log("Combining all map_tables")
@@ -167,7 +167,7 @@ tracedf(condition_matching_test_pos)
 ## Add negative pairs to the valid and test data
 ####################
 if not is_initialized():
-    model, _ = load_ST_model()
+    model, _ = get_ST_model()
     build_index(model, std_condition_concept[['concept_id', 'concept_name']], repos='target_concepts_initial_model')
 
 
