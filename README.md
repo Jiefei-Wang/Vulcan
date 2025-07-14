@@ -8,9 +8,21 @@
 - How many concepts get mapped to OMOP? By vocabulary?
 - fix those vocabularies codes: {'HGNC', 'MDR', 'MTHSPL', 'MED-RT', 'CDT'} that does not have a mapping to OMOP
 
-# scripts/base_data/annotation/3_combine.py
-- Inspect all_names for potential issues in source_name
+# scripts/matching/3_train_valid_split.py
 
+The number of concepts in the condition domain:
+```python
+std_condition_concept['concept_id'].nunique() # 160288
+condition_matching_map_train['concept_id'].nunique()  # 104672
+
+condition_matching_map_train.groupby(['source', 'type'])['concept_id'].nunique()
+# source  type   
+# OMOP    nonstd     83257
+#         synonym    98677
+# UMLS    DEF        19553
+#         STR        49962
+```
+It cannot cover all concepts, so we need more data.
 
 # vocabulary table
 CDISC:

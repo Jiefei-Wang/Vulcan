@@ -2,10 +2,11 @@ import importlib
 import modules.ML_sampling
 import modules.ML_data
 import modules.ChromaVecDB
+import modules.CodeBlockExecutor
 importlib.reload(modules.ML_sampling)
 importlib.reload(modules.ML_data)
 importlib.reload(modules.ChromaVecDB)
-
+importlib.reload(modules.CodeBlockExecutor)
 
 # def load_lib(libPath):
 #     with open(libPath) as f:

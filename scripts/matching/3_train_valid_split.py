@@ -7,77 +7,28 @@ import duckdb
 logger.reset_timer()
 logger.log("Combining all map_tables")
 
+output_dir = "data/matching"
 std_bridge = pd.read_feather("data/omop_feather/std_bridge.feather")
 concept= pd.read_feather('data/omop_feather/concept.feather')
-
-base_path = "data/matching"
-map_tables = [
-    'map_table_umls.feather',
-    'map_table_OMOP.feather',
-]
-
-combined_mapping_table = pd.concat(
-    [pd.read_feather(os.path.join(base_path, name_map_table)) for name_map_table in map_tables],
-    ignore_index=True
-)
-combined_mapping_table['source_id'] = combined_mapping_table['source_id'].astype(str)
-
-# - keep only the concepts that are in the standard bridge
-#   1. if the concept_id is standard, it is in the std_bridge
-#   2. if the concept_id is non-standard, it will be mapped to a standard concept_id in the std_bridge
-# For those that are not in the std_bridge, there is no way to map them 
-# to a standard concept, so we will not use them in the training.
-# - For name_stripped, keep only letters in name, all lowercase from name
-# - Remove empty names
-matching_map_table = duckdb.query("""
-    SELECT std_bridge.std_concept_id AS concept_id, source, source_id, type, name,
-    LOWER(REGEXP_REPLACE(name, '[^a-zA-Z0-9]', '', 'g')) AS name_stripped
-    FROM combined_mapping_table
-    inner join std_bridge
-    ON combined_mapping_table.concept_id = std_bridge.concept_id
-    where name IS NOT NULL AND name != ''
-""").df()
-## TODO: remove non-english rows: 인도신1mg주
-
-## find duplicates in name_stripped
-# non_dup_name = matching_map_table[~matching_map_table.duplicated(subset=['concept_id','name'], keep=False)].reset_index(drop=True)
-
-# non_dup_name[non_dup_name.duplicated(subset=['concept_id','name_stripped'], keep=False)].reset_index(drop=True)
-
-
-# non_dup_name[non_dup_name['name_stripped'] == 'ERYTHROSINESODIUMANHYDROUS']
-
-## for each concept_id, remove the duplicates in name_stripped
-matching_map_table = duckdb.query("""
-    SELECT *
-    FROM matching_map_table
-    WHERE (concept_id, name_stripped) IN (
-        SELECT concept_id, name_stripped
-        FROM matching_map_table
-        GROUP BY concept_id, name_stripped
-        HAVING COUNT(*) = 1
-    );
-"""
-).df()
-
-
-matching_map_table.to_feather(os.path.join(base_path, 'matching_map_table.feather'))
+matching_map_table = pd.read_feather('data/matching/matching_map_table.feather')
 
 
 
-
-
-
-logger.log("Define standard and non-standard concepts")
+####################
+## define the concepts we are interested in training
+####################
+logger.log("Define standard and non-standard concepts for training")
 condition_concept = concept[concept['domain_id'] == 'Condition'].reset_index(drop=True)
 std_condition_concept = condition_concept[condition_concept['standard_concept'] == 'S'].reset_index(drop=True)
 nonstd_condition_concept = condition_concept[condition_concept['standard_concept'] != 'S'].reset_index(drop=True)
 
 
-std_condition_concept.to_feather(os.path.join(base_path, 'std_condition_concept.feather'))
+std_condition_concept.to_feather(os.path.join(output_dir, 'std_condition_concept.feather'))
+
 
 # define the mapping table for condition domain
 condition_matching_map_table = matching_map_table[matching_map_table['concept_id'].isin(std_condition_concept['concept_id'])].reset_index(drop=True)
+
 
 ####################
 ## Exclude the reserved concepts from map_table
@@ -95,6 +46,21 @@ condition_matching_map_valid = condition_matching_map_table[row_filter_valid].re
 condition_matching_map_train = condition_matching_map_table[~row_filter_valid].reset_index(drop=True)
 
 
+
+
+
+# unique concept id in the table
+std_condition_concept['concept_id'].nunique() # 160288
+condition_matching_map_train['concept_id'].nunique()  # 104672
+
+condition_matching_map_train.groupby(['source', 'type'])['concept_id'].nunique()
+# source  type   
+# OMOP    nonstd     83257
+#         synonym    98677
+# UMLS    DEF        19553
+#         STR        49962
+
+
 ####################
 ## Buld index for train data
 ####################
@@ -109,9 +75,9 @@ condition_matching_name_bridge_train = condition_matching_map_train[['concept_id
 condition_matching_name_table_train = condition_matching_map_train[['name_id', 'source', 'source_id', 'type', 'name']].drop_duplicates(subset=['name_id']).reset_index(drop=True)
 
 
-condition_matching_name_bridge_train.to_feather(os.path.join(base_path, 'condition_matching_name_bridge_train.feather'))
+condition_matching_name_bridge_train.to_feather(os.path.join(output_dir, 'condition_matching_name_bridge_train.feather'))
 # [1624671 rows x 2 columns]
-condition_matching_name_table_train.to_feather(os.path.join(base_path, 'condition_matching_name_table_train.feather'))
+condition_matching_name_table_train.to_feather(os.path.join(output_dir, 'condition_matching_name_table_train.feather'))
 # [764392 rows x 5 columns]
 
 
@@ -156,3 +122,27 @@ condition_matching_test.to_feather(os.path.join(base_path, 'condition_matching_t
 # [30737 rows x 4 columns]
 logger.done()
 
+
+
+
+
+from sentence_transformers import SentenceTransformer
+
+
+query_texts = condition_matching_valid['sentence1'].tolist()
+corpus_texts = std_condition_concept['concept_name'].tolist()[1:100]
+model = SentenceTransformer('models/ClinicalBERT')  # Fast and good quality
+query_embeddings = model.encode(query_texts, normalize_embeddings=True)
+corpus_embeddings = model.encode(corpus_texts, normalize_embeddings=True)
+
+
+import faiss
+
+# Build index
+dimension = query_embeddings.shape[1]
+index = faiss.IndexFlatIP(dimension)  # inner product = cosine if normalized
+index.add(corpus_embeddings.astype('float32'))
+
+# Search
+top_k = 5
+scores, indices = index.search(query_embeddings.astype('float32'), top_k)

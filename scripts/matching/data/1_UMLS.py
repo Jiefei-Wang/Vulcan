@@ -8,6 +8,7 @@ from tqdm import tqdm
 import pandas as pd
 from modules.timed_logger import logger
 import duckdb
+from modules.CodeBlockExecutor import trace
 logger.reset_timer()
 
 logger.log("Getting UMLS definitions")
@@ -121,6 +122,7 @@ map_table_umls = pd.concat([map_table_umls_str, map_table_umls_def], ignore_inde
     
 
 map_table_umls.to_feather('data/matching/map_table_umls.feather')
+trace(map_table_umls.shape)
+#> (4985537, 5)
 
-# [4985537 rows x 5 columns]
 logger.done()
