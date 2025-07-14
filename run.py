@@ -41,16 +41,8 @@ from modules.CodeBlockExecutor import execute_and_embed
 
 execute_and_embed('scripts/ML/1_init_false_positive.py')
 
-
 execute_and_embed('scripts/ML/2_train.py')
 
-
-
-########################
-## Train
-########################
-with open('scripts/ML_train.py') as f:
-    exec(f.read())
 
 
 ########################
@@ -58,6 +50,3 @@ with open('scripts/ML_train.py') as f:
 ########################
 with open('sanity/sanity_ML_data.py') as f:
     exec(f.read())
-
-## TODO: add sanity check for ML_data_condition_matching
-

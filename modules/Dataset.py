@@ -152,8 +152,8 @@ class FalsePositiveDataset():
     def __init__(self, target_concepts, n_fp_matching = 50, existing_path=None):
         if existing_path is not None:
             fp_matching = pd.read_feather(existing_path)
-            fp_matching = fp_matching[['sentence1', 'sentence2']].copy()
-            self.fp_matching = fp_matching[['sentence1', 'sentence2', 'label']]
+            fp_matching = fp_matching[['sentence1', 'sentence2', 'label']].copy()
+            self.fp_matching = fp_matching
         self.target_concepts = target_concepts.copy()
         self.n_fp_matching = n_fp_matching
         
