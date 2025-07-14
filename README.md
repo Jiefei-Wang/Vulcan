@@ -103,3 +103,8 @@ SNOMED                58172
 SNOMED Veterinary       144
 """
 ```
+
+## Install FAISS-GPU
+```
+conda install conda-forge::faiss-gpu
+```

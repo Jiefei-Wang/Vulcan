@@ -1,7 +1,7 @@
 from modules.FalsePositives import get_false_positives
 import os
 import pandas as pd
-from modules.ML_train import auto_load_model
+from modules.ModelFunctions import auto_load_model
 
 
 n_fp_matching = 50

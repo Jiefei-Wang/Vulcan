@@ -1,14 +1,36 @@
-import sys
 import io
-import ast
 from typing import Dict, List
 from contextlib import redirect_stdout
+import pandas as pd
 
 # Create a persistent global namespace for all code executions
 PERSISTENT_GLOBALS = {}
 
+TRACER_MARKER = ['trace(', 'tracedf(']
+
 def trace(x):
     print(x)
+
+def tracedf(df: pd.DataFrame):
+    # 1. DataFrame dimensions
+    print(f"DataFrame dimensions: {df.shape[0]} rows × {df.shape[1]} columns")
+    
+    # 2. Column names (valid Python format)
+    col_repr = "[" + ", ".join(repr(col) for col in df.columns) + "]"
+    print(f"Column names:\n{col_repr}")
+    
+    # 3. Memory usage including string contents
+    mem_bytes = df.memory_usage(deep=True).sum()
+    mem_str = _format_bytes(mem_bytes)
+    print(f"Estimated memory usage: {mem_str}")
+
+def _format_bytes(size):
+    # Helper to format bytes in a readable format
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size < 1024.0:
+            return f"{size:,.2f} {unit}"
+        size /= 1024.0
+    return f"{size:,.2f} PB"
 
 
 def execute_and_embed(filename: str, output_filename: str = None):
@@ -73,7 +95,7 @@ def split_into_blocks(content: str) -> List[Dict]:
         if is_output_line:
             continue
         
-        is_output_object = line.strip().startswith('trace(')
+        is_output_object = line.strip().startswith(tuple(TRACER_MARKER))
         
         if is_output_object:
             if current_lines:

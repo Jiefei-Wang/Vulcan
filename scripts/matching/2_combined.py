@@ -1,9 +1,8 @@
 import pandas as pd
 import os
 from modules.timed_logger import logger
-from sklearn.model_selection import train_test_split
 import duckdb
-from modules.CodeBlockExecutor import trace
+from modules.CodeBlockExecutor import trace, tracedf
 
 logger.reset_timer()
 logger.log("Combining all map_tables")
@@ -68,13 +67,18 @@ matching_map_table = duckdb.query("""
 """
 ).df()
 
-trace(matching_map_table.shape)
-#> (5696264, 7)
+
 
 matching_map_table = matching_map_table[['concept_id', 'source', 'source_id', 'type', 'name']].reset_index(drop=True)
 
 matching_map_table.to_feather(os.path.join(output_dir, 'matching_map_table.feather'))
 
+
+tracedf(matching_map_table)
+#> DataFrame dimensions: 5696264 rows × 5 columns
+#> Column names:
+#> ['concept_id', 'source', 'source_id', 'type', 'name']
+#> Estimated memory usage: 1.53 GB
 
 
 

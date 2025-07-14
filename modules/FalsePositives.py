@@ -15,7 +15,7 @@ import onnxruntime
 import pandas as pd
 import duckdb
 from modules.ChromaVecDB import ChromaVecDB
-from modules.ML_train import auto_load_model
+from modules.ModelFunctions import auto_load_model
 from modules.timed_logger import logger
 
 

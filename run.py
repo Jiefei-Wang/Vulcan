@@ -35,15 +35,12 @@ with open('scripts/matching/test_dataset.py', encoding="UTF-8") as f:
 ## Prepare ML data
 ## Only need to run once
 ########################
-with open('scripts/ML/1_model.py') as f:
+
+with open('scripts/ML/1_init_false_positive.py') as f:
     exec(f.read())
 
 
-with open('scripts/ML/2_init_false_positive.py') as f:
-    exec(f.read())
-
-
-with open('scripts/ML/3_train.py') as f:
+with open('scripts/ML/2_train.py') as f:
     exec(f.read())
 
 

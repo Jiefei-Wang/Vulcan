@@ -3,10 +3,9 @@ os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
 
 import numpy as np
 import json
-from modules.ML_train import auto_load_model
+from modules.ModelFunctions import auto_load_model
 from modules.ChromaVecDB import ChromaVecDB
 import pandas as pd
-from modules.ChromaVecDB import ChromaVecDB
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
 model, tokenizer = auto_load_model('output/all-MiniLM-L6-v2_2025-04-23_12-21-04')

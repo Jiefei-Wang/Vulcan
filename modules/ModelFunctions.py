@@ -5,8 +5,9 @@ import re
 
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer
+from modules.TOKENS import TOKENS
 
-
+special_tokens = [TOKENS.child]
 
 def get_base_model(base_model, special_tokens):
     model = SentenceTransformer(base_model)
@@ -191,3 +192,20 @@ def get_loss(loss_func, block_tokenizer, idx):
     # Forward pass
     loss_value = loss_func(sentence_pairs, labels_tensor)
     return loss_value
+
+
+
+
+def load_ST_model(base_model = 'ClinicalBERT'):
+    """
+    Load a SentenceTransformer model or create a new one if it doesn't exist. The model will be saved and reused in the future.
+    """
+    hashed_token = hash(tuple(special_tokens))
+    base_model_path = f'models/{base_model}'
+    saved_path = f'models/{base_model}_ST_{hashed_token}'
+    if not os.path.exists(saved_path):
+        model, tokenizer = get_base_model(base_model_path, special_tokens)
+        auto_save_model(model, tokenizer, saved_path, max_saves=1) 
+    else:
+        model, tokenizer = auto_load_model(saved_path)
+    return model, tokenizer
