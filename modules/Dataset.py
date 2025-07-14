@@ -1,3 +1,4 @@
+from modules.FaissDB import delete_repository
 from modules.FalsePositives import get_false_positives
 import numpy as np
 import pandas as pd
@@ -152,8 +153,7 @@ class FalsePositiveDataset():
         if existing_path is not None:
             fp_matching = pd.read_feather(existing_path)
             fp_matching = fp_matching[['sentence1', 'sentence2']].copy()
-            fp_matching['label'] = 0
-            self.fp_matching = fp_matching
+            self.fp_matching = fp_matching[['sentence1', 'sentence2', 'label']]
         self.target_concepts = target_concepts.copy()
         self.n_fp_matching = n_fp_matching
         
@@ -161,15 +161,19 @@ class FalsePositiveDataset():
         self.model = model
     
     def resample(self, seed=None):
+        target_concepts = self.target_concepts
+        model = self.model
+        n_fp_matching = self.n_fp_matching
+        
+        delete_repository(repos='training_false_positive')
         fp_matching = get_false_positives(
-            model=self.model,
-            target_concepts = self.target_concepts,
-            n_fp_matching = self.n_fp_matching
+            model=model,
+            corpus_concepts=target_concepts,
+            n_fp=n_fp_matching,
+            repos='training_false_positive'
         )
         fp_matching = fp_matching[['sentence1', 'sentence2']].copy()
-        fp_matching['label'] = 0
-        
-        self.fp_matching = fp_matching
+        self.fp_matching = fp_matching[['sentence1', 'sentence2', 'label']]
         return self
     
     def __len__(self):

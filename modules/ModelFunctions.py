@@ -196,13 +196,18 @@ def get_loss(loss_func, block_tokenizer, idx):
 
 
 
+
+
 def load_ST_model(base_model = 'ClinicalBERT'):
     """
     Load a SentenceTransformer model or create a new one if it doesn't exist. The model will be saved and reused in the future.
     """
-    hashed_token = hash(tuple(special_tokens))
+    token_combined = '_'.join(special_tokens)
+    # keep only letters, numbers, and underscores
+    token_combined = re.sub(r'\W+', '', token_combined)
+    
     base_model_path = f'models/{base_model}'
-    saved_path = f'models/{base_model}_ST_{hashed_token}'
+    saved_path = f'models/{base_model}_ST_{token_combined}'
     if not os.path.exists(saved_path):
         model, tokenizer = get_base_model(base_model_path, special_tokens)
         auto_save_model(model, tokenizer, saved_path, max_saves=1) 

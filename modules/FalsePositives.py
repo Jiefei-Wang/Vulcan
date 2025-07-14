@@ -1,82 +1,59 @@
-# This script generate false postives samples for training data
-
-
-## For Windows: Python 3.10, chromaDB version 0.5.4
-## For Windows: Python 3.11, chromadb==0.5.0 chroma-hnswlib==0.7.3
-import os
-os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-# Fix for ONNX Runtime DLL issues on Windows
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['ONNXRUNTIME_PROVIDERS'] = 'CPUExecutionProvider'
-
-## without this, conda might give an error when loading chromadb
-import onnxruntime
-import pandas as pd
 import duckdb
-from modules.ChromaVecDB import ChromaVecDB
-from modules.ModelFunctions import auto_load_model
-from modules.timed_logger import logger
+from modules.FaissDB import build_index, search_similar, is_initialized
 
 
-# n_fp_matching = 50
-def get_false_positives(model, target_concepts, n_fp_matching = 50):
-    logger.reset_timer()
-    ####################################
-    ## Work on conditions domain
-    ####################################
-    logger.log("Building reference embedding for standard concepts")
-    db = ChromaVecDB(model=model, name="ref")
-    db.empty_collection()
-    db.store_concepts(target_concepts, batch_size= 5461)
-
-
-    logger.log("Querying reference embedding")
-    ## for each item in candidate_df_matching
-    n_results = n_fp_matching * 2 + 10
-    results = db.query(
-            target_concepts,
-            n_results = n_results
-        )
-
-    logger.log("Building candidate false positive dataframe")
-    candidate_fp = target_concepts[['concept_id', "concept_name"]].copy()
-    candidate_fp['maps_to'] = [[int(i) for i in x] for x in results['ids']]
-    candidate_fp['distance'] = results['distances']
-    candidate_fp = candidate_fp.explode(['maps_to', 'distance'], ignore_index=False)
+def get_false_positives(model, 
+                        corpus_concepts, 
+                        query_concepts = None, 
+                        blacklist=None,
+                        n_fp=50, repos='default'):
+    """
+    Args:
+        model: SentenceTransformer model to use for embeddings
+        corpus_concepts: A dataframe with ['concept_id', 'concept_name'] columns
+        query_concepts: A dataframe with ['concept_id', 'concept_name'] columns, if None, use corpus_concepts
+        blacklist: A dataframe with ['concept_id1', 'concept_id2'] columns, pairs to exclude from the results, if None, no pairs are excluded
+        n_fp: Number of false positive pairs to generate
+    """
     
+    target_embeddings = None
+    if not is_initialized(repos=repos):
+        target_embeddings = build_index(model, corpus_concepts, repos=repos)
+    if query_concepts is None:
+        query_concepts = corpus_concepts
+        if target_embeddings is not None:
+            query_embeddings = target_embeddings
+        else:
+            query_embeddings = None
+    else:
+        query_embeddings = None
+        
+    fp = search_similar(
+        query_ids=query_concepts['concept_id'].to_list(),
+        query_texts=query_concepts['concept_name'].to_list(),
+        query_embeddings=query_embeddings,
+        repos=repos,
+        top_k=n_fp)
     
-    ## For each concept_id, sort by distance and keep the first n_fp_matching entries
-    candidate_fp = duckdb.query(f"""
-        -- Rank candidates by distance for each concept_id
-        WITH ranked_candidates AS (
-        SELECT *,
-                ROW_NUMBER() OVER (PARTITION BY concept_id ORDER BY distance) AS rn
-        FROM candidate_fp
-        ),
-        -- Select the top n_fp_matching candidates for each concept_id
-        -- while removing 0 distance candidates
-        top_candidates AS (
-            SELECT concept_id as concept_id1, 
-            concept_name as sentence1, 
-            maps_to as concept_id2, 
-            distance
-            FROM ranked_candidates
-            WHERE rn <= {n_fp_matching} and distance > 0
-            ORDER BY concept_id, distance
-        )
-        SELECT concept_id1, sentence1, 
-        concept_id2, target_concepts.concept_name as sentence2, 
-        distance
-        FROM top_candidates
-        INNER JOIN target_concepts
-        ON top_candidates.concept_id2 = target_concepts.concept_id;
+    fp = fp.rename(columns={
+        'query_concept_id': 'concept_id1',
+        'query_text': 'sentence1',
+        'concept_id': 'concept_id2',
+        'concept_name': 'sentence2'
+    })
+    fp = fp[['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'score']]
+    
+    # Exclude pairs in the blacklist
+    if blacklist is not None:
+        fp = duckdb.query("""
+        SELECT sentence1, sentence2, concept_id1, concept_id2, score
+        FROM fp
+        ANTI JOIN blacklist
+        ON fp.concept_id1 = blacklist.concept_id1
+        AND fp.concept_id2 = blacklist.concept_id2
         """).df()
-
-
-    logger.done()
     
-    return candidate_fp
-
-
-
+    
+    fp['label'] = 0
+    
+    return fp

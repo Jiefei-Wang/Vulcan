@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+from modules.FalsePositives import get_false_positives
 from modules.timed_logger import logger
 from sklearn.model_selection import train_test_split
 from modules.CodeBlockExecutor import trace, tracedf
@@ -29,12 +30,17 @@ nonstd_condition_concept = condition_concept[condition_concept['standard_concept
 std_condition_concept.to_feather(os.path.join(output_dir, 'std_condition_concept.feather'))
 
 trace(std_condition_concept.shape)
+#> (160288, 10)
 
 
 # define the mapping table for condition domain
 condition_matching_map_table = matching_map_table[matching_map_table['concept_id'].isin(std_condition_concept['concept_id'])].reset_index(drop=True)
 
 tracedf(condition_matching_map_table)
+#> DataFrame dimensions: 749123 rows × 5 columns
+#> Column names:
+#> ['concept_id', 'source', 'source_id', 'type', 'name']
+#> Estimated memory usage: 205.52 MB
 
 ####################
 ## Exclude the reserved concepts from map_table
@@ -52,16 +58,32 @@ condition_matching_map_valid = condition_matching_map_table[row_filter_valid].re
 condition_matching_map_train = condition_matching_map_table[~row_filter_valid].reset_index(drop=True)
 
 tracedf(condition_matching_map_train)
+#> DataFrame dimensions: 740140 rows × 5 columns
+#> Column names:
+#> ['concept_id', 'source', 'source_id', 'type', 'name']
+#> Estimated memory usage: 203.34 MB
 
 tracedf(condition_matching_map_valid)
+#> DataFrame dimensions: 8983 rows × 5 columns
+#> Column names:
+#> ['concept_id', 'source', 'source_id', 'type', 'name']
+#> Estimated memory usage: 2.18 MB
 
 
 
 # unique concept id in the table
 trace(std_condition_concept['concept_id'].nunique())
+#> 160288
 trace(condition_matching_map_train['concept_id'].nunique())
+#> 104672
 
 trace(condition_matching_map_train.groupby(['source', 'type'])['concept_id'].nunique())
+#> source  type   
+#> OMOP    nonstd     83253
+#>         synonym    98677
+#> UMLS    DEF        19553
+#>         STR        49962
+#> Name: concept_id, dtype: int64
 
 
 ####################
@@ -82,8 +104,16 @@ condition_matching_name_bridge_train.to_feather(os.path.join(output_dir, 'condit
 condition_matching_name_table_train.to_feather(os.path.join(output_dir, 'condition_matching_name_table_train.feather'))
 
 tracedf(condition_matching_name_bridge_train)
+#> DataFrame dimensions: 740140 rows × 2 columns
+#> Column names:
+#> ['concept_id', 'name_id']
+#> Estimated memory usage: 11.29 MB
 
 tracedf(condition_matching_name_table_train)
+#> DataFrame dimensions: 659459 rows × 5 columns
+#> Column names:
+#> ['name_id', 'source', 'source_id', 'type', 'name']
+#> Estimated memory usage: 178.42 MB
 
 
 ####################
@@ -122,45 +152,71 @@ condition_matching_test_pos.reset_index(drop=True, inplace=True)
 
 
 tracedf(condition_matching_valid_pos)
+#> DataFrame dimensions: 898 rows × 5 columns
+#> Column names:
+#> ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']
+#> Estimated memory usage: 161.31 KB
 
 tracedf(condition_matching_test_pos)
+#> DataFrame dimensions: 8085 rows × 5 columns
+#> Column names:
+#> ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']
+#> Estimated memory usage: 1.42 MB
 
 ####################
 ## Add negative pairs to the valid and test data
 ####################
 if not is_initialized():
     model, _ = load_ST_model()
-    build_index(model, std_condition_concept[['concept_id', 'concept_name']])
+    build_index(model, std_condition_concept[['concept_id', 'concept_name']], repos='target_concepts_initial_model')
 
 
-def get_negative_pairs(df, n_neg=5):
+def get_negative_pairs(df, std_condition_concept, n_neg=5):
     df = df.copy().drop_duplicates(subset=['concept_id1', "sentence1"])
+    fp = get_false_positives(
+        model = model,
+        corpus_concepts=std_condition_concept[['concept_id', 'concept_name']],
+        query_concepts=df.rename(
+            columns={
+                'concept_id1': 'concept_id',
+                'sentence1': 'concept_name'
+            }
+        ),
+        blacklist=df[['concept_id1', 'concept_id2']],
+        n_fp=5,
+        repos='target_concepts_initial_model'
+    )
     
-    query_concept_ids = df['concept_id1'].tolist()
-    query_texts = df['sentence1'].tolist()
-    search_results = search_similar(query_concept_ids, query_texts, top_k=n_neg)
-
-    # Exclude concept_id1, concept_id2 pairs in the df from search_results
-    # as they are positive pairs
-    search_results = duckdb.query("""
-        SELECT query_concept_id as concept_id1, query_text as sentence1, concept_id as concept_id2, concept_name as sentence2, score
-        FROM search_results
-        ANTI JOIN df
-        ON search_results.query_concept_id = df.concept_id1
-        AND search_results.concept_id = df.concept_id2
-        where score <=0.99
-    """).df()
-    
-    search_results['label'] = 0  # Negative pairs
-    return search_results
+    return fp
 
 
-condition_matching_valid_neg = get_negative_pairs(condition_matching_valid_pos, n_neg=5)
-condition_matching_test_neg = get_negative_pairs(condition_matching_test_pos, n_neg=5)
+
+condition_matching_test_neg = get_negative_pairs(
+    condition_matching_test_pos,
+    std_condition_concept,
+    n_neg=5
+)
+
+condition_matching_valid_neg = get_negative_pairs(
+    condition_matching_valid_pos,
+    std_condition_concept,
+    n_neg=5
+)
+
+
+
 
 tracedf(condition_matching_valid_neg)
+#> DataFrame dimensions: 4046 rows × 6 columns
+#> Column names:
+#> ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'score', 'label']
+#> Estimated memory usage: 787.89 KB
 
 tracedf(condition_matching_test_neg)
+#> DataFrame dimensions: 36581 rows × 6 columns
+#> Column names:
+#> ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'score', 'label']
+#> Estimated memory usage: 6.99 MB
 
 
 
@@ -174,8 +230,16 @@ condition_matching_test.to_feather(os.path.join(output_dir, 'condition_matching_
 
 
 tracedf(condition_matching_valid)
+#> DataFrame dimensions: 4944 rows × 5 columns
+#> Column names:
+#> ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']
+#> Estimated memory usage: 917.54 KB
 
 tracedf(condition_matching_test)
+#> DataFrame dimensions: 44666 rows × 5 columns
+#> Column names:
+#> ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']
+#> Estimated memory usage: 8.13 MB
 
 logger.done()
 

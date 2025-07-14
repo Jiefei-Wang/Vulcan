@@ -16,6 +16,8 @@ with open('scripts/base_data/1_data_conversion.py') as f:
 ## matching data
 ## Only need to run once
 ########################
+from modules.CodeBlockExecutor import execute_and_embed
+
 with open('scripts/matching/1_extract.py') as f:
     exec(f.read())
 
@@ -35,14 +37,12 @@ with open('scripts/matching/test_dataset.py', encoding="UTF-8") as f:
 ## Prepare ML data
 ## Only need to run once
 ########################
+from modules.CodeBlockExecutor import execute_and_embed
 
-with open('scripts/ML/1_init_false_positive.py') as f:
-    exec(f.read())
+execute_and_embed('scripts/ML/1_init_false_positive.py')
 
 
-with open('scripts/ML/2_train.py') as f:
-    exec(f.read())
-
+execute_and_embed('scripts/ML/2_train.py')
 
 
 
@@ -61,6 +61,3 @@ with open('sanity/sanity_ML_data.py') as f:
 
 ## TODO: add sanity check for ML_data_condition_matching
 
-
-from modules.CodeBlockExecutor import execute_and_embed
-execute_and_embed('scripts/test2.py')
