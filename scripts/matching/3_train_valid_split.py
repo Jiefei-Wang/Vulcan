@@ -191,55 +191,110 @@ def get_negative_pairs(df, std_condition_concept, n_neg=5):
 
 
 
-condition_matching_test_neg = get_negative_pairs(
-    condition_matching_test_pos,
-    std_condition_concept,
-    n_neg=5
+## get a sample of the training data to use for evaluating loss
+corpus_train = condition_matching_map_train[['name_id', 'name']].drop_duplicates().rename(
+    columns={
+        'name_id': 'concept_id',
+        'name': 'concept_name'
+    }
+)
+big_offset = 10**20
+corpus_train['concept_id'] = corpus_train['concept_id'] + big_offset # offset to avoid collision with the real concept ids
+query_train_ids = condition_matching_map_train['concept_id'].drop_duplicates().sample(n=len(condition_matching_valid_pos), random_state=42)
+query_train = concept[concept['concept_id'].isin(query_train_ids)][['concept_id', 'concept_name']].reset_index(drop=True)
+blacklist_train = condition_matching_map_train[['concept_id', 'name_id']].rename(
+    columns={
+        'concept_id': 'concept_id1',
+        'name_id': 'concept_id2'
+    }
 )
 
-condition_matching_valid_neg = get_negative_pairs(
+blacklist_train['concept_id2'] = blacklist_train['concept_id2'] + big_offset
+
+condition_matching_train_subset_fp = get_false_positives(
+        model = model,
+        corpus_concepts=corpus_train,
+        query_concepts=query_train,
+        blacklist=blacklist_train,
+        n_fp=5,
+        repos='condition_matching_train_subset'
+    )
+
+condition_matching_train_subset_pos = condition_matching_map_train[condition_matching_map_train['concept_id'].isin(query_train_ids)][['concept_id', 'name', 'name_id']].drop_duplicates(
+    subset=['concept_id']).merge(
+    query_train,
+    on='concept_id'
+).rename(
+    columns={
+        'concept_id': 'concept_id1',
+        'concept_name': 'sentence1',
+        'name_id': 'concept_id2',
+        'name': 'sentence2'
+    }
+).reset_index(drop=True)
+condition_matching_train_subset_pos['label'] = 1  # Positive pairs
+
+
+
+
+
+condition_matching_valid_fp = get_negative_pairs(
     condition_matching_valid_pos,
     std_condition_concept,
     n_neg=5
 )
 
 
+condition_matching_test_fp = get_negative_pairs(
+    condition_matching_test_pos,
+    std_condition_concept,
+    n_neg=5
+)
 
 
-tracedf(condition_matching_valid_neg)
-#> DataFrame dimensions: 4046 rows × 6 columns
+tracedf(condition_matching_train_subset_fp)
+#> DataFrame dimensions: 2921 rows × 6 columns
 #> Column names:
 #> ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'score', 'label']
-#> Estimated memory usage: 787.89 KB
+#> Estimated memory usage: 608.59 KB
 
-tracedf(condition_matching_test_neg)
-#> DataFrame dimensions: 36581 rows × 6 columns
+tracedf(condition_matching_valid_fp)
+#> DataFrame dimensions: 4053 rows × 6 columns
 #> Column names:
 #> ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'score', 'label']
-#> Estimated memory usage: 6.99 MB
+#> Estimated memory usage: 791.60 KB
+
+tracedf(condition_matching_test_fp)
+#> DataFrame dimensions: 36508 rows × 6 columns
+#> Column names:
+#> ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'score', 'label']
+#> Estimated memory usage: 6.96 MB
 
 
 
 columns = ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']
-condition_matching_valid = pd.concat([condition_matching_valid_pos, condition_matching_valid_neg[columns]], ignore_index=True)
-condition_matching_test = pd.concat([condition_matching_test_pos, condition_matching_test_neg[columns]], ignore_index=True)
+condition_matching_train_subset = pd.concat([condition_matching_train_subset_pos, condition_matching_train_subset_fp[columns]], ignore_index=True)
+condition_matching_valid = pd.concat([condition_matching_valid_pos, condition_matching_valid_fp[columns]], ignore_index=True)
+condition_matching_test = pd.concat([condition_matching_test_pos, condition_matching_test_fp[columns]], ignore_index=True)
+
+
+condition_matching_train_subset.to_feather(os.path.join(output_dir, 'condition_matching_train_subset.feather'))
 
 condition_matching_valid.to_feather(os.path.join(output_dir, 'condition_matching_valid.feather'))
-
 condition_matching_test.to_feather(os.path.join(output_dir, 'condition_matching_test.feather'))
 
 
 tracedf(condition_matching_valid)
-#> DataFrame dimensions: 4944 rows × 5 columns
+#> DataFrame dimensions: 4951 rows × 5 columns
 #> Column names:
 #> ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']
-#> Estimated memory usage: 917.54 KB
+#> Estimated memory usage: 921.17 KB
 
 tracedf(condition_matching_test)
-#> DataFrame dimensions: 44666 rows × 5 columns
+#> DataFrame dimensions: 44593 rows × 5 columns
 #> Column names:
 #> ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']
-#> Estimated memory usage: 8.13 MB
+#> Estimated memory usage: 8.11 MB
 
 logger.done()
 

@@ -1,3 +1,4 @@
+import json
 import os
 import datetime
 import shutil
@@ -55,7 +56,7 @@ def get_model_indices(path):
     indices = sorted(indices)
     return indices, filenames
 
-def auto_save_model(model, tokenizer, save_folder, max_saves):
+def auto_save_model(model, tokenizer, save_folder, max_saves, train_config = {}):
     """
     Automatically saves the model and tokenizer to a folder with a patterned name,
     managing the number of saved models by deleting older ones when necessary.
@@ -90,7 +91,8 @@ def auto_save_model(model, tokenizer, save_folder, max_saves):
         # Save the model and tokenizer
         model.save(save_path)  # Assuming model has a save method
         tokenizer.save_pretrained(save_path)  # Save tokenizer as well
-
+        with open(os.path.join(save_path, 'train_config.json'), 'w') as f:
+            json.dump(train_config, f)
         print(f"Model and tokenizer saved to {save_path}")
     except Exception as e:
         print(f"Error saving model or tokenizer: {e}")
@@ -102,7 +104,6 @@ def auto_save_model(model, tokenizer, save_folder, max_saves):
 
     error_num = 0
     while len(model_indices) > max_saves:
-        model_indices, file_names = get_model_indices(save_folder)
         file_name = file_names[0]  # oldest based on filename index
         oldest_model_path = os.path.join(save_folder, file_name)
         try:
@@ -116,14 +117,17 @@ def auto_save_model(model, tokenizer, save_folder, max_saves):
             if error_num > 2:
                 print("Error deleting old models, stopping auto-delete.")
                 break
+            
+        model_indices, file_names = get_model_indices(save_folder)
 
     return current_save_index
 
-def save_best_model(model, tokenizer, save_folder):
+def save_best_model(model, tokenizer, save_folder, train_config = {}):
     save_path = os.path.join(save_folder, "best_model")
     model.save(save_path)  # Assuming model has a save method
     tokenizer.save_pretrained(save_path)  # Save tokenizer as well
-    
+    with open(os.path.join(save_path, 'train_config.json'), 'w') as f:
+        json.dump(train_config, f)
 
 
 
@@ -172,12 +176,17 @@ def auto_load_model(save_folder):
         # Load the model and tokenizer
         model = SentenceTransformer(latest_model_path)  # Load the model
         tokenizer = AutoTokenizer.from_pretrained(latest_model_path)  # Load tokenizer
-
+        train_config_path = os.path.join(latest_model_path, 'train_config.json')
+        if os.path.exists(train_config_path):
+            with open(train_config_path, 'r') as f:
+                train_config = json.load(f)
+        else:
+            train_config = {}
         print(f"Loaded latest model and tokenizer from: {latest_model_path}")
-        return model, tokenizer
+        return model, tokenizer, train_config
     except Exception as e:
         print(f"Error loading model or tokenizer from {latest_model_path}: {e}")
-        return None, None
+        return None, None, None
 
 
 def get_loss(loss_func, block_tokenizer, idx):
@@ -212,5 +221,5 @@ def get_ST_model(base_model = 'ClinicalBERT'):
         model, tokenizer = get_base_model(base_model_path, special_tokens)
         auto_save_model(model, tokenizer, saved_path, max_saves=1) 
     else:
-        model, tokenizer = auto_load_model(saved_path)
+        model, tokenizer, _ = auto_load_model(saved_path)
     return model, tokenizer

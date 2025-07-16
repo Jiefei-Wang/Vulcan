@@ -48,6 +48,8 @@ def evaluate_embedding_similarity_with_mrr(model, data, threshold=0.8):
         positive_indices = sorted_group.index[sorted_group['label'] == 1].tolist()
         if positive_indices:
             reciprocal_ranks.append(1.0 / (positive_indices[0] + 1))  # rank is 1-based
+        else:
+            raise ValueError("No positive labels found for concept_id1: {}".format(group['concept_id1'].iloc[0]))
 
     if reciprocal_ranks:
         metrics['MRR'] = np.mean(reciprocal_ranks)

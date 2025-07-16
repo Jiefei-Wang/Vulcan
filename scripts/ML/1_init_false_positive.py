@@ -31,7 +31,7 @@ fp.to_feather(os.path.join(base_path, f'fp_matching_{n_fp_matching}.feather'))
 
 
 tracedf(fp)
-#> DataFrame dimensions: 7894103 rows × 6 columns
+#> DataFrame dimensions: 7893869 rows × 6 columns
 #> Column names:
 #> ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'score', 'label']
 #> Estimated memory usage: 1.62 GB

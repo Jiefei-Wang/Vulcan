@@ -41,9 +41,9 @@ from modules.CodeBlockExecutor import execute_and_embed
 
 execute_and_embed('scripts/ML/1_init_false_positive.py')
 
-execute_and_embed('scripts/ML/2_train.py')
 
-
+with open('scripts/ML/2_train.py', encoding="UTF-8") as f:
+    exec(f.read())
 
 ########################
 ## sanity check

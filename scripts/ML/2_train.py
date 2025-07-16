@@ -16,7 +16,7 @@ from datetime import datetime
 from transformers import get_linear_schedule_with_warmup 
 from sentence_transformers import SentenceTransformerTrainer, losses
 
-from modules.ModelFunctions import auto_save_model, save_best_model, get_loss, get_base_model, get_ST_model
+from modules.ModelFunctions import auto_save_model, save_best_model, get_loss, get_base_model, get_ST_model, auto_load_model
 from modules.BlockTokenizer import BlockTokenizer
 from modules.timed_logger import logger
 from modules.Dataset import PositiveDataset, NegativeDataset, FalsePositiveDataset, CombinedDataset
@@ -30,7 +30,20 @@ logger.log("Loading Model")
 output_dir = f"output/finetune/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 base_model = 'ClinicalBERT'
 
-model, tokenizer = get_ST_model(base_model)
+## selection between original model and trained model
+if True:
+    model, tokenizer = get_ST_model(base_model)
+    start_epoch = 0
+    start_batch_i = 0
+    start_global_step = 0
+else:
+    model, tokenizer, train_config = auto_load_model("output/all-MiniLM-L6-v2_2025-04-17_20-01-05")
+
+    start_epoch = train_config.get('epoch', 0)
+    start_batch_i = train_config.get('batch_i', 0) + 1
+    start_global_step = train_config.get('global_step', 0) + 1
+    
+
 #################################
 ## Load training data
 #################################
@@ -77,7 +90,6 @@ matching_fp = FalsePositiveDataset(
 )
 matching_fp.add_model(model)
 
-
 ds_all = CombinedDataset(
     positive= matching_pos,
     negative= matching_neg,
@@ -100,6 +112,8 @@ ds_all = CombinedDataset(
 #################################
 logger.log("Loading validation data")
 condition_matching_valid = pd.read_feather(os.path.join(base_path, 'condition_matching_valid.feather'))
+
+condition_matching_train_subset = pd.read_feather(os.path.join(base_path, 'condition_matching_train_subset.feather'))
 
 
 #################################
@@ -130,10 +144,10 @@ print(f"Using device: {device}")
 
 
 # 7. Scheduler
-epoch_num = 1
+epoch_num = 10
 buffer_size = 256 * 16
 batch_size = 256
-arg_eval_steps = 512
+arg_eval_steps = 2048
 arg_saving_steps = arg_eval_steps*2
 
 
@@ -156,25 +170,33 @@ scheduler = get_linear_schedule_with_warmup(
 scaler = GradScaler(device=device_type, enabled=fp16)
 
 # --- Manual Training Loop ---
-global_step = 0
+global_step = start_global_step
 best_eval_accuracy = float('-inf')
 wandb.watch(model) # Log gradients and model topology
 
 
 progress_bar = tqdm(total=len(block_tokenizer) * epoch_num)
-for epoch_i in range(epoch_num):
+for epoch_i in range(start_epoch, epoch_num):
     # evaluator.build_reference(model, std_condition_concept)  
     epoch_total_loss = 0.0
     
     if epoch_i > 0:
-        ds_all = ds_all.resample(seed=epoch_i)
-        ds_all = ds_all.shuffle(seed=epoch_i)
-    
-    for batch_i in range(len(block_tokenizer)):
+        model.eval()
+        with torch.no_grad():
+            ds_all = ds_all.resample(seed=epoch_i)
+            ds_all = ds_all.shuffle(seed=epoch_i)
+
+    for batch_i in range(start_batch_i, len(block_tokenizer)):
         global_step += 1
         
+        train_config = {
+            'global_step': global_step,
+            'epoch': epoch_i,
+            'batch_i': batch_i
+        }
+        
         # Forward pass
-        model = model.train() # Set model to training mode
+        model.train() # Set model to training mode
         optimizer.zero_grad()
         with autocast(device_type, enabled=fp16):
             loss_value = get_loss(loss_func, block_tokenizer, batch_i)
@@ -204,7 +226,7 @@ for epoch_i in range(epoch_num):
         ## save model every arg_saving_steps
         if global_step % arg_saving_steps == 0:
             print("Saving checkpoint...")
-            auto_save_model(model, tokenizer, output_dir, max_saves=max_saves)
+            auto_save_model(model, tokenizer, output_dir, max_saves=max_saves, train_config=train_config)
         
         #Log training loss periodically
         if global_step % arg_eval_steps == 0:
@@ -213,6 +235,11 @@ for epoch_i in range(epoch_num):
                 eval_results = evaluate_embedding_similarity_with_mrr(model, condition_matching_valid)
                 ## move everything to evaluation panel
                 eval_results = {f"eval/{k}": v for k, v in eval_results.items()}
+                
+                train_subset_results = evaluate_embedding_similarity_with_mrr(model, condition_matching_train_subset)
+                train_subset_results = {f"train_subset/{k}": v for k, v in train_subset_results.items()}
+                
+                eval_results.update(train_subset_results)
                 wandb.log(eval_results, step=global_step)
             print(f"Evaluation results: {eval_results}")
 
@@ -221,7 +248,7 @@ for epoch_i in range(epoch_num):
             if eval_accuracy > best_eval_accuracy:
                 print(f"New best model found! accuracy improved from {best_eval_accuracy:.4f} to {eval_accuracy:.4f}. Saving...")
                 best_eval_accuracy = eval_accuracy
-                save_best_model(model, tokenizer, output_dir) # Pass necessary args
+                save_best_model(model, tokenizer, output_dir, train_config=train_config) # Pass necessary args
                 wandb.log({"eval/best_accuracy": best_eval_accuracy}, step=global_step)
             
 

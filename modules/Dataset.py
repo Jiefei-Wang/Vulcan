@@ -172,8 +172,7 @@ class FalsePositiveDataset():
             n_fp=n_fp_matching,
             repos='training_false_positive'
         )
-        fp_matching = fp_matching[['sentence1', 'sentence2']].copy()
-        self.fp_matching = fp_matching[['sentence1', 'sentence2', 'label']]
+        self.fp_matching = fp_matching[['sentence1', 'sentence2', 'label']].copy()
         return self
     
     def __len__(self):
