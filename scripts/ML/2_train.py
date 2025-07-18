@@ -31,13 +31,13 @@ output_dir = f"output/finetune/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 base_model = 'ClinicalBERT'
 
 ## selection between original model and trained model
-if True:
+if False:
     model, tokenizer = get_ST_model(base_model)
     start_epoch = 0
     start_batch_i = 0
     start_global_step = 0
 else:
-    model, tokenizer, train_config = auto_load_model("output/all-MiniLM-L6-v2_2025-04-17_20-01-05")
+    model, tokenizer, train_config = auto_load_model("output/finetune/2025-07-16_17-39-33")
 
     start_epoch = train_config.get('epoch', 0)
     start_batch_i = train_config.get('batch_i', 0) + 1
@@ -126,10 +126,6 @@ max_length = 512 # Maximum length for tokenization
 # evaluator = CustomEvaluator()
 max_saves = 4
 
-# --- Initialization ---
-wandb_report_steps = 256
-temp_dir = tempfile.gettempdir()
-wandb.init(project="Concept_Mapping", name=output_dir, dir = temp_dir)
 
 # Loss and Optimizer
 loss_func = losses.ContrastiveLoss(model=model)
@@ -159,11 +155,14 @@ block_tokenizer = BlockTokenizer(
     device = device,
     max_length=max_length)
 
+# warmup period
 warmup_ratio = 0.1
+total_steps = len(ds_all) // batch_size * epoch_num
+warmup_steps = int(total_steps * warmup_ratio)
 scheduler = get_linear_schedule_with_warmup(
     optimizer,
-    num_warmup_steps= len(ds_all) // batch_size * warmup_ratio,
-    num_training_steps= len(ds_all) // batch_size * epoch_num
+    num_warmup_steps=max(0, warmup_steps - start_global_step),
+    num_training_steps=max(1, total_steps - start_global_step)
 )
 
 # 8. Mixed Precision Scaler
@@ -172,10 +171,19 @@ scaler = GradScaler(device=device_type, enabled=fp16)
 # --- Manual Training Loop ---
 global_step = start_global_step
 best_eval_accuracy = float('-inf')
-wandb.watch(model) # Log gradients and model topology
 
+
+
+
+# --- log ---
+wandb_report_steps = 256
+temp_dir = tempfile.gettempdir()
+wandb.init(project="Concept_Mapping", name=output_dir, dir = temp_dir)
 
 progress_bar = tqdm(total=len(block_tokenizer) * epoch_num)
+progress_bar.update(start_global_step)
+
+
 for epoch_i in range(start_epoch, epoch_num):
     # evaluator.build_reference(model, std_condition_concept)  
     epoch_total_loss = 0.0
@@ -185,8 +193,10 @@ for epoch_i in range(start_epoch, epoch_num):
         with torch.no_grad():
             ds_all = ds_all.resample(seed=epoch_i)
             ds_all = ds_all.shuffle(seed=epoch_i)
+            block_tokenizer.update_dataset(ds_all)
 
-    for batch_i in range(start_batch_i, len(block_tokenizer)):
+    batch_start = start_batch_i if epoch_i == start_epoch else 0
+    for batch_i in range(batch_start, len(block_tokenizer)):
         global_step += 1
         
         train_config = {
@@ -208,7 +218,7 @@ for epoch_i in range(start_epoch, epoch_num):
         scheduler.step() # Step scheduler after optimizer step
         
         epoch_total_loss += loss_value.item()
-        epoch_avg_loss = epoch_total_loss / (batch_i + 1)
+        epoch_avg_loss = epoch_total_loss / (batch_i - batch_start + 1)
 
         info = {
             "total": global_step,
@@ -250,7 +260,7 @@ for epoch_i in range(start_epoch, epoch_num):
                 best_eval_accuracy = eval_accuracy
                 save_best_model(model, tokenizer, output_dir, train_config=train_config) # Pass necessary args
                 wandb.log({"eval/best_accuracy": best_eval_accuracy}, step=global_step)
-            
+        
 
 
 

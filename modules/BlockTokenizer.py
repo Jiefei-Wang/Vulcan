@@ -32,12 +32,23 @@ class BlockTokenizer:
         self.max_length = max_length
         
         # Calculate number of blocks and total batches
-        self.num_blocks = math.ceil(len(dataset) / buffer_size)
-        self.total_batches = math.ceil(len(dataset) / batch_size)
+        self.update_dataset(dataset)
         
         # Thread pool for async tokenization
         self.executor = ThreadPoolExecutor(max_workers=1)
           # Cache for tokenized blocks (max 2 blocks)
+        self.reset_cache()
+    
+    def update_dataset(self, new_dataset):
+        """
+        Update the dataset and reset caches.
+        
+        Args:
+            new_dataset: New dataset to tokenize
+        """
+        self.dataset = new_dataset
+        self.num_blocks = math.ceil(len(new_dataset) / self.buffer_size)
+        self.total_batches = math.ceil(len(new_dataset) / self.batch_size)
         self.reset_cache()
     
     def __len__(self):
