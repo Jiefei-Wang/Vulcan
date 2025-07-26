@@ -5,7 +5,7 @@ from collections import defaultdict
 
 def evaluate_embedding_similarity_with_mrr(model, data, threshold=0.8):
     """
-    Evaluate sentence embedding similarity using dot product similarity and return metrics including MRR.
+    Evaluate sentence embedding similarity using dot product similarity and return metrics including MRR. sentence1 and concept_id1 are the key concept to evaluate
 
     Parameters:
     - model: A sentence-transformers model with `.encode()` method.

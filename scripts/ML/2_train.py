@@ -31,8 +31,17 @@ output_dir = f"output/finetune/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 base_model = 'ClinicalBERT'
 
 ## selection between original model and trained model
-if False:
-    model, tokenizer = get_ST_model(base_model)
+
+use_relation = True
+
+
+if True:
+    if use_relation:
+        # continue training with relation data
+        model, tokenizer, _ = auto_load_model("output/matching_model")
+    else:
+        # start from scratch
+        model, tokenizer = get_ST_model(base_model)
     start_epoch = 0
     start_batch_i = 0
     start_global_step = 0
@@ -42,6 +51,7 @@ else:
     start_epoch = train_config.get('epoch', 0)
     start_batch_i = train_config.get('batch_i', 0) + 1
     start_global_step = train_config.get('global_step', 0) + 1
+    use_relation = train_config.get('use_relation', False)
     
 
 #################################
@@ -49,16 +59,19 @@ else:
 #################################
 logger.log("Loading training data")
 
-base_path = "data/matching"
+matching_base_path = "data/matching"
+relation_base_path = "data/relation"
 seed = 42
 n_pos_matching = 10
 n_neg_matching = 50
 n_neg_relation = 50
 n_fp_matching = 50
+n_pos_relation = 10
+n_fp_relation = 50
 
-target_concepts = pd.read_feather(os.path.join(base_path, 'std_condition_concept.feather'))
-name_bridge = pd.read_feather(os.path.join(base_path, 'condition_matching_name_bridge_train.feather'))
-name_table = pd.read_feather(os.path.join(base_path, 'condition_matching_name_table_train.feather'))
+target_concepts = pd.read_feather(os.path.join(matching_base_path, 'std_condition_concept.feather'))
+name_bridge = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_name_bridge_train.feather'))
+name_table = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_name_table_train.feather'))
 
 
 #################################
@@ -82,7 +95,7 @@ matching_neg = NegativeDataset(
 
 
 
-fp_path = os.path.join(base_path, f'fp_matching_{n_fp_matching}.feather')
+fp_path = os.path.join(matching_base_path, f'fp_matching_{n_fp_matching}.feather')
 matching_fp = FalsePositiveDataset(
     target_concepts=target_concepts,
     n_fp_matching=n_fp_matching,
@@ -90,11 +103,38 @@ matching_fp = FalsePositiveDataset(
 )
 matching_fp.add_model(model)
 
-ds_all = CombinedDataset(
-    positive= matching_pos,
-    negative= matching_neg,
-    false_positive=matching_fp
-)
+
+
+if use_relation:
+    name_table_relation = pd.read_feather(os.path.join(relation_base_path, 'name_table_relation.feather'))
+    name_bridge_relation = pd.read_feather(os.path.join(relation_base_path, 'name_bridge_relation.feather'))
+    
+    relation_pos = PositiveDataset(
+        target_concepts=target_concepts,
+        name_table=name_table_relation,
+        name_bridge=name_bridge_relation,
+        max_elements=n_pos_relation,
+        seed=seed
+    )
+    
+    relation_fp = pd.read_feather(os.path.join(relation_base_path, f'fp_relation_{n_fp_relation}.feather'))
+
+
+
+if use_relation:
+    ds_all = CombinedDataset(
+        positive= matching_pos,
+        negative= matching_neg,
+        false_positive=matching_fp,
+        relation_positive=relation_pos,
+        relation_false_positive=relation_fp
+    )
+else:
+    ds_all = CombinedDataset(
+        positive= matching_pos,
+        negative= matching_neg,
+        false_positive=matching_fp
+    )
 
 
 # for i in tqdm(range(len(ds_all))):
@@ -111,9 +151,9 @@ ds_all = CombinedDataset(
 ## For validation
 #################################
 logger.log("Loading validation data")
-condition_matching_valid = pd.read_feather(os.path.join(base_path, 'condition_matching_valid.feather'))
+condition_matching_valid = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_valid.feather'))
 
-condition_matching_train_subset = pd.read_feather(os.path.join(base_path, 'condition_matching_train_subset.feather'))
+condition_matching_train_subset = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_train_subset.feather'))
 
 
 #################################

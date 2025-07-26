@@ -32,6 +32,19 @@ with open('scripts/matching/test_dataset.py', encoding="UTF-8") as f:
     exec(f.read())
 
 
+########################
+## relation data
+## Only need to run once
+########################
+
+from modules.CodeBlockExecutor import execute_and_embed
+
+with open('scripts/relation/1_positive_relation.py', encoding="UTF-8") as f:
+    exec(f.read())
+    
+
+execute_and_embed('scripts/relation/2_false_positive.py')
+
 
 ########################
 ## Prepare ML data

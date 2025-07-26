@@ -253,7 +253,8 @@ class CombinedDataset():
     def resample(self, seed=None):
         for name, dataset in self.datasets.items():
             ## check if it has a resample method
-            if hasattr(dataset, 'resample'):
+            ## for data.frame, we just ignore it
+            if not isinstance(dataset, pd.DataFrame) and hasattr(dataset, 'resample'):
                 dataset = dataset.resample(seed)
                 self.datasets[name] = dataset
         
