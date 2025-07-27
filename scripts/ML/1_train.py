@@ -66,12 +66,12 @@ n_pos_matching = 10
 n_neg_matching = 50
 n_neg_relation = 50
 n_fp_matching = 50
-n_pos_relation = 2
-n_fp_relation = 10
+n_pos_relation = 1000
+n_fp_relation = 50
 
-target_concepts = pd.read_feather(os.path.join(matching_base_path, 'std_condition_concept.feather'))
-name_bridge = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_name_bridge_train.feather'))
-name_table = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_name_table_train.feather'))
+target_concepts = pd.read_feather(os.path.join(matching_base_path, 'target_concepts.feather'))
+matching_name_bridge = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_name_bridge_train.feather'))
+matching_name_table = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_name_table_train.feather'))
 
 
 #################################
@@ -79,28 +79,29 @@ name_table = pd.read_feather(os.path.join(matching_base_path, 'condition_matchin
 #################################
 matching_pos = PositiveDataset(
     target_concepts=target_concepts,
-    name_table=name_table,
-    name_bridge=name_bridge,
+    name_table=matching_name_table,
+    name_bridge=matching_name_bridge,
     max_elements=n_pos_matching,
     seed=seed
 )
 
 matching_neg = NegativeDataset(
     target_concepts=target_concepts,
-    name_table=name_table,
-    blacklist_bridge=name_bridge,
+    name_table=matching_name_table,
+    blacklist_bridge=matching_name_bridge,
     max_elements = n_neg_matching,
     seed=seed
 )
 
 
 
-fp_path = os.path.join(matching_base_path, f'fp_matching_{n_fp_matching}.feather')
+matching_fp_path = os.path.join(matching_base_path, f'matching_fp_{n_fp_matching}.feather')
 matching_fp = FalsePositiveDataset(
-    corpus_dataset=target_concepts,
-    query_dataset=target_concepts,
+    corpus_ids=target_concepts['concept_id'],
+    corpus_names=target_concepts['concept_name'],
     n_fp=n_fp_matching,
-    existing_path=fp_path
+    existing_path=matching_fp_path,
+    repos='training_matching_false_positive'
 )
 matching_fp.add_model(model)
 
@@ -117,37 +118,38 @@ if use_relation:
         max_elements=n_pos_relation,
         seed=seed
     )
-    
-    relation_fp = pd.read_feather(os.path.join(relation_base_path, f'fp_relation_{n_fp_relation}.feather'))
+
+    relation_fp_path = os.path.join(relation_base_path, f'fp_relation_{n_fp_relation}.feather')
+    relation_fp = FalsePositiveDataset(
+        corpus_ids=target_concepts['concept_id'],
+        corpus_names=target_concepts['concept_name'],
+        query_ids=name_table_relation['name_id'],
+        query_names=name_table_relation['name'],
+        n_fp=n_fp_relation,
+        blacklist_from=name_bridge_relation['concept_id'],
+        blacklist_to=name_bridge_relation['name_id'],
+        existing_path=relation_fp_path,
+        repos='training_relation_false_positive'
+    )
+    relation_fp.add_model(model)
 
 
 
 
 if use_relation:
     ds_all = CombinedDataset(
-        positive= matching_pos,
-        negative= matching_neg,
-        false_positive=matching_fp,
-        relation_positive=relation_pos,
-        relation_false_positive=relation_fp
+        matching_pos= matching_pos,
+        matching_neg= matching_neg,
+        matching_fp=matching_fp,
+        relation_pos=relation_pos,
+        relation_fp=relation_fp
     )
 else:
     ds_all = CombinedDataset(
-        positive= matching_pos,
-        negative= matching_neg,
-        false_positive=matching_fp
+        matching_pos= matching_pos,
+        matching_neg= matching_neg,
+        matching_fp=matching_fp
     )
-
-# matching_pos
-# PositiveDataset(length=441535, label=1, seed=42)
-# matching_neg
-# PositiveDataset(length=8014400, seed=42)
-# matching_fp
-# FalsePositiveDataset(length=7893869, n_fp_matching=50)
-# relation_pos
-# PositiveDataset(length=1499715, label=1, seed=42)
-# relation_fp.shape
-# (7794913, 6)
 
 
 # for i in tqdm(range(len(ds_all))):
@@ -168,6 +170,7 @@ condition_matching_valid = pd.read_feather(os.path.join(matching_base_path, 'con
 
 condition_matching_train_subset = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_train_subset.feather'))
 
+condition_relation_train_subset = pd.read_feather(os.path.join(relation_base_path, 'condition_relation_train_subset.feather'))
 
 #################################
 ## Model
@@ -299,10 +302,14 @@ for epoch_i in range(start_epoch, epoch_num):
                 ## move everything to evaluation panel
                 eval_results = {f"eval/{k}": v for k, v in eval_results.items()}
                 
-                train_subset_results = evaluate_embedding_similarity_with_mrr(model, condition_matching_train_subset)
-                train_subset_results = {f"train_subset/{k}": v for k, v in train_subset_results.items()}
+                train_matching_results = evaluate_embedding_similarity_with_mrr(model, condition_matching_train_subset)
+                train_matching_results = {f"train_matching/{k}": v for k, v in train_matching_results.items()}
+                eval_results.update(train_matching_results)
                 
-                eval_results.update(train_subset_results)
+                train_relation_results = evaluate_embedding_similarity_with_mrr(model, condition_relation_train_subset)
+                train_relation_results = {f"train_relation/{k}": v for k, v in train_relation_results.items()}
+                eval_results.update(train_relation_results)
+                
                 wandb.log(eval_results, step=global_step)
             print(f"Evaluation results: {eval_results}")
 

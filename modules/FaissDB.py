@@ -30,7 +30,7 @@ def build_index(model, corpus_ids, corpus_names, corpus_embeddings=None, repos='
     """
     if len(corpus_ids) != len(corpus_names):
         raise ValueError("Length of corpus_ids and corpus_names must match")
-    if not corpus_ids:
+    if len(corpus_ids) == 0:
         raise ValueError("corpus_ids cannot be empty")
     
     init_repository(repos)

@@ -14,6 +14,8 @@ importlib.reload(modules.FalsePositives)
 import modules.Dataset
 importlib.reload(modules.Dataset)
 
+import modules.FaissDB
+importlib.reload(modules.FaissDB)
 
 # def load_lib(libPath):
 #     with open(libPath) as f:

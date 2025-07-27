@@ -23,13 +23,9 @@ with open('scripts/matching/1_extract.py') as f:
 
 execute_and_embed('scripts/matching/2_combined.py')
 
-
 execute_and_embed('scripts/matching/3_train_valid_split.py')
 
-
-# Unit test
-with open('scripts/matching/test_dataset.py', encoding="UTF-8") as f:
-    exec(f.read())
+execute_and_embed('scripts/matching/4_false_positive.py')
 
 
 ########################
@@ -39,8 +35,7 @@ with open('scripts/matching/test_dataset.py', encoding="UTF-8") as f:
 
 from modules.CodeBlockExecutor import execute_and_embed
 
-with open('scripts/relation/1_positive_relation.py', encoding="UTF-8") as f:
-    exec(f.read())
+execute_and_embed('scripts/relation/1_positive_relation.py')
     
 
 execute_and_embed('scripts/relation/2_false_positive.py')
@@ -52,10 +47,12 @@ execute_and_embed('scripts/relation/2_false_positive.py')
 ########################
 from modules.CodeBlockExecutor import execute_and_embed
 
-execute_and_embed('scripts/ML/1_init_false_positive.py')
 
+with open('scripts/ML/1_train.py', encoding="UTF-8") as f:
+    exec(f.read())
+    
 
-with open('scripts/ML/2_train.py', encoding="UTF-8") as f:
+with open('scripts/ML/2_test.py', encoding="UTF-8") as f:
     exec(f.read())
 
 ########################
@@ -63,6 +60,8 @@ with open('scripts/ML/2_train.py', encoding="UTF-8") as f:
 ########################
 with open('sanity/sanity_ML_data.py') as f:
     exec(f.read())
+
+
 
 
 exec(open('tests/test_dataset.py').read())

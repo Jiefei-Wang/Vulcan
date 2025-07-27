@@ -5,11 +5,12 @@ from collections import defaultdict
 
 def evaluate_embedding_similarity_with_mrr(model, data, threshold=0.8):
     """
-    Evaluate sentence embedding similarity using dot product similarity and return metrics including MRR. sentence1 and concept_id1 are the key concept to evaluate
+    Evaluate sentence embedding similarity using dot product similarity and return metrics including MRR. 
+    query_name and query_id are the key concept to evaluate
 
     Parameters:
     - model: A sentence-transformers model with `.encode()` method.
-    - data: A DataFrame with ['sentence1', 'sentence2', 'concept_id1', 'concept_id2', 'label']
+    - data: A DataFrame with ['corpus_name', 'query_name', 'corpus_id', 'query_id', 'label'] columns.
     - threshold: Threshold for binarizing similarity
 
     Returns:
@@ -17,11 +18,11 @@ def evaluate_embedding_similarity_with_mrr(model, data, threshold=0.8):
     """
 
     # Step 1: Encode sentences
-    emb1 = model.encode(data['sentence1'].tolist(), normalize_embeddings=True)
-    emb2 = model.encode(data['sentence2'].tolist(), normalize_embeddings=True)
+    corpus_emb = model.encode(data['corpus_name'].tolist(), normalize_embeddings=True)
+    query_emb = model.encode(data['query_name'].tolist(), normalize_embeddings=True)
 
     # Step 2: Compute similarity
-    similarities = np.sum(emb1 * emb2, axis=1)
+    similarities = np.sum(corpus_emb * query_emb, axis=1)
     labels = data['label'].values
     preds = (similarities >= threshold).astype(int)
 
@@ -39,8 +40,8 @@ def evaluate_embedding_similarity_with_mrr(model, data, threshold=0.8):
     df = data.copy()
     df['similarity'] = similarities
 
-    # Group by concept_id1, rank all candidates by similarity
-    grouped = df.groupby('concept_id1')
+    # Group by query_id, rank all candidates by similarity
+    grouped = df.groupby('query_id')
     reciprocal_ranks = []
 
     for _, group in grouped:

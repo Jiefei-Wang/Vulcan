@@ -1,3 +1,7 @@
+# 1. remove all non-english rows
+# 2. remove duplicated names identified by name_stripped
+# 3. remove mapping that maps to the concept name itself
+
 import pandas as pd
 import os
 from modules.timed_logger import logger
@@ -9,6 +13,7 @@ logger.log("Combining all map_tables")
 
 std_bridge = pd.read_feather("data/omop_feather/std_bridge.feather")
 concept= pd.read_feather('data/omop_feather/concept.feather')
+
 
 input_dir = "data/matching"
 output_dir = "data/matching"
@@ -68,6 +73,17 @@ matching_map_table = duckdb.query("""
 ).df()
 
 
+# remove the mapping that maps to the concept name itself
+concept_id_to_name = concept[['concept_id', 'concept_name']]
+matching_map_table = duckdb.query("""
+    SELECT matching_map_table.concept_id, source, source_id, type, name
+    FROM matching_map_table
+    INNER JOIN concept_id_to_name
+    ON matching_map_table.concept_id = concept_id_to_name.concept_id
+    WHERE LOWER(REGEXP_REPLACE(name, '[^a-zA-Z0-9]', '', 'g')) != LOWER(REGEXP_REPLACE(concept_name, '[^a-zA-Z0-9]', '', 'g'))
+""").df()
+
+
 
 matching_map_table = matching_map_table[['concept_id', 'source', 'source_id', 'type', 'name']].reset_index(drop=True)
 
@@ -75,10 +91,10 @@ matching_map_table.to_feather(os.path.join(output_dir, 'matching_map_table.feath
 
 
 tracedf(matching_map_table)
-#> DataFrame dimensions: 5696264 rows × 5 columns
+#> DataFrame dimensions: 4826911 rows × 5 columns
 #> Column names:
 #> ['concept_id', 'source', 'source_id', 'type', 'name']
-#> Estimated memory usage: 1.53 GB
+#> Estimated memory usage: 1.30 GB
 
 
 

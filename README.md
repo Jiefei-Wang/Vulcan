@@ -1,7 +1,7 @@
-- omop_data.py: Get OMOP data from the database
-- ML_data.py: Prepare data for NLP
-- ML_train.py: Train the model
-- test.py: Test the model
+# Agreement
+
+- sentence1 is always the standard concept
+- sentence2 is the non-standard for training
 
 
 # UMLS
@@ -108,3 +108,5 @@ SNOMED Veterinary       144
 ```
 conda install conda-forge::faiss-gpu
 ```
+
+

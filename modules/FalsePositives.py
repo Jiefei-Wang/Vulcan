@@ -21,6 +21,10 @@ def getFalsePositives(model,
         blacklist_to: List of concept IDs in the query
         pairs to exclude from the results, if None, no pairs are excluded
         n_fp: Number of false positive pairs to generate
+    
+    Returns:
+        DataFrame with columns: ['query_id', 'query_name', 'corpus_id', 'corpus_name', 'score', 'label']
+        For each query, it returns n_fp pairs of similar corpus concepts that are not in the blacklist.
     """
     
     query_same_as_corpus = query_ids is None and query_names is None

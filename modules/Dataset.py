@@ -149,31 +149,61 @@ class NegativeDataset(Dataset):
 
 
 class FalsePositiveDataset():
-    def __init__(self, corpus_dataset, query_dataset,  n_fp = 50, existing_path=None):
+    def __init__(self, 
+                 corpus_ids, corpus_names, 
+                 query_ids=None, query_names=None, 
+                 blacklist_from=[], blacklist_to=[],
+                 n_fp=50, existing_path=None, repos='default'):
         if existing_path is not None:
             fp = pd.read_feather(existing_path)
+            fp = fp.rename(
+                columns={
+                    'corpus_name': 'sentence1',
+                    'query_name': 'sentence2'
+                }
+            )
             fp = fp[['sentence1', 'sentence2', 'label']].copy()
             self.fp = fp
-        self.corpus_dataset = corpus_dataset.copy()
-        self.query_dataset = query_dataset.copy()
+        self.corpus_ids = corpus_ids.copy() if hasattr(corpus_ids, 'copy') else corpus_ids
+        self.corpus_names = corpus_names.copy() if hasattr(corpus_names, 'copy') else corpus_names
+        self.query_ids = query_ids.copy() if query_ids is not None and hasattr(query_ids, 'copy') else query_ids
+        self.query_names = query_names.copy() if query_names is not None and hasattr(query_names, 'copy') else query_names
         self.n_fp = n_fp
+        self.repos = repos
+        self.blacklist_from = blacklist_from
+        self.blacklist_to = blacklist_to
 
     def add_model(self, model):
         self.model = model
     
     def resample(self, seed=None):
-        corpus_dataset = self.corpus_dataset
-        query_dataset = self.query_dataset
+        corpus_ids = self.corpus_ids
+        corpus_names = self.corpus_names
+        query_ids = self.query_ids
+        query_names = self.query_names
+        blacklist_from = self.blacklist_from
+        blacklist_to = self.blacklist_to
         model = self.model
         n_fp = self.n_fp
+        repos = self.repos
 
-        delete_repository(repos='training_false_positive')
+        delete_repository(repos=repos)
         fp = getFalsePositives(
             model=model,
-            corpus_names=corpus_dataset,
-            query_names=query_dataset,
+            corpus_ids=corpus_ids,
+            corpus_names=corpus_names,
+            query_ids=query_ids,
+            query_names=query_names,
+            blacklist_from=blacklist_from,
+            blacklist_to=blacklist_to,
             n_fp=n_fp,
-            repos='training_false_positive'
+            repos=repos
+        )
+        fp = fp.rename(
+            columns={
+                'corpus_name': 'sentence1',
+                'query_name': 'sentence2'
+            }
         )
         self.fp = fp[['sentence1', 'sentence2', 'label']].copy()
         return self
@@ -189,7 +219,7 @@ class FalsePositiveDataset():
             return self.fp.iloc[idx].to_dict()
     
     def __str__(self):
-        return f"FalsePositiveDataset(length={len(self)}, n_fp_matching={self.n_fp_matching})"
+        return f"FalsePositiveDataset(length={len(self)}, n_fp={self.n_fp})"
     
     def __repr__(self):
         return self.__str__()
@@ -267,7 +297,10 @@ class CombinedDataset():
         return self    
     
     def __str__(self):
-        return f"CombinedDataset(length={len(self)}, datasets={self.names}, seed={self.seed})"
+        lens = [len(self.datasets[name]) for name in self.names]
+        len_info = '\n'.join([f"{name}: {length}" for name, length in zip(self.names, lens)])
+        return f"CombinedDataset(total length={self.total_length}), datasets:\n{len_info} \nseed={self.seed}"
+
     
     def __repr__(self):
         return self.__str__()
