@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from modules.FalsePositives import get_false_positives
+from modules.FalsePositives import getFalsePositives
 from modules.timed_logger import logger
 from sklearn.model_selection import train_test_split
 from modules.CodeBlockExecutor import trace, tracedf
@@ -173,10 +173,10 @@ if not is_initialized():
 
 def get_negative_pairs(df, std_condition_concept, n_neg=5):
     df = df.copy().drop_duplicates(subset=['concept_id1', "sentence1"])
-    fp = get_false_positives(
+    fp = getFalsePositives(
         model = model,
-        corpus_concepts=std_condition_concept[['concept_id', 'concept_name']],
-        query_concepts=df.rename(
+        corpus_names=std_condition_concept[['concept_id', 'concept_name']],
+        query_names=df.rename(
             columns={
                 'concept_id1': 'concept_id',
                 'sentence1': 'concept_name'
@@ -211,10 +211,10 @@ blacklist_train = condition_matching_map_train[['concept_id', 'name_id']].rename
 
 blacklist_train['concept_id2'] = blacklist_train['concept_id2'] + big_offset
 
-condition_matching_train_subset_fp = get_false_positives(
+condition_matching_train_subset_fp = getFalsePositives(
         model = model,
-        corpus_concepts=corpus_train,
-        query_concepts=query_train,
+        corpus_names=corpus_train,
+        query_names=query_train,
         blacklist=blacklist_train,
         n_fp=5,
         repos='condition_matching_train_subset'

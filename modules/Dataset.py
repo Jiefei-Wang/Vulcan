@@ -1,5 +1,5 @@
 from modules.FaissDB import delete_repository
-from modules.FalsePositives import get_false_positives
+from modules.FalsePositives import getFalsePositives
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
@@ -142,48 +142,51 @@ class NegativeDataset(Dataset):
 
     def __str__(self):
         ## show the total length
-        return f"PositiveDataset(length={len(self)}, seed={self.seed})"
+        return f"NegativeDataset(length={len(self)}, seed={self.seed})"
     
     def __repr__(self):
         return self.__str__()
 
 
 class FalsePositiveDataset():
-    def __init__(self, target_concepts, n_fp_matching = 50, existing_path=None):
+    def __init__(self, corpus_dataset, query_dataset,  n_fp = 50, existing_path=None):
         if existing_path is not None:
-            fp_matching = pd.read_feather(existing_path)
-            fp_matching = fp_matching[['sentence1', 'sentence2', 'label']].copy()
-            self.fp_matching = fp_matching
-        self.target_concepts = target_concepts.copy()
-        self.n_fp_matching = n_fp_matching
-        
+            fp = pd.read_feather(existing_path)
+            fp = fp[['sentence1', 'sentence2', 'label']].copy()
+            self.fp = fp
+        self.corpus_dataset = corpus_dataset.copy()
+        self.query_dataset = query_dataset.copy()
+        self.n_fp = n_fp
+
     def add_model(self, model):
         self.model = model
     
     def resample(self, seed=None):
-        target_concepts = self.target_concepts
+        corpus_dataset = self.corpus_dataset
+        query_dataset = self.query_dataset
         model = self.model
-        n_fp_matching = self.n_fp_matching
-        
+        n_fp = self.n_fp
+
         delete_repository(repos='training_false_positive')
-        fp_matching = get_false_positives(
+        fp = getFalsePositives(
             model=model,
-            corpus_concepts=target_concepts,
-            n_fp=n_fp_matching,
+            corpus_names=corpus_dataset,
+            query_names=query_dataset,
+            n_fp=n_fp,
             repos='training_false_positive'
         )
-        self.fp_matching = fp_matching[['sentence1', 'sentence2', 'label']].copy()
+        self.fp = fp[['sentence1', 'sentence2', 'label']].copy()
         return self
     
     def __len__(self):
-        return len(self.fp_matching)
+        return len(self.fp)
     
     def __getitem__(self, idx):
         if isinstance(idx, slice):
             # Handle slice objects
-            return self.fp_matching.iloc[idx].to_dict(orient='records')
+            return self.fp.iloc[idx].to_dict(orient='records')
         else:
-            return self.fp_matching.iloc[idx].to_dict()
+            return self.fp.iloc[idx].to_dict()
     
     def __str__(self):
         return f"FalsePositiveDataset(length={len(self)}, n_fp_matching={self.n_fp_matching})"

@@ -66,8 +66,8 @@ n_pos_matching = 10
 n_neg_matching = 50
 n_neg_relation = 50
 n_fp_matching = 50
-n_pos_relation = 10
-n_fp_relation = 50
+n_pos_relation = 2
+n_fp_relation = 10
 
 target_concepts = pd.read_feather(os.path.join(matching_base_path, 'std_condition_concept.feather'))
 name_bridge = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_name_bridge_train.feather'))
@@ -97,8 +97,9 @@ matching_neg = NegativeDataset(
 
 fp_path = os.path.join(matching_base_path, f'fp_matching_{n_fp_matching}.feather')
 matching_fp = FalsePositiveDataset(
-    target_concepts=target_concepts,
-    n_fp_matching=n_fp_matching,
+    corpus_dataset=target_concepts,
+    query_dataset=target_concepts,
+    n_fp=n_fp_matching,
     existing_path=fp_path
 )
 matching_fp.add_model(model)
@@ -121,6 +122,7 @@ if use_relation:
 
 
 
+
 if use_relation:
     ds_all = CombinedDataset(
         positive= matching_pos,
@@ -135,6 +137,17 @@ else:
         negative= matching_neg,
         false_positive=matching_fp
     )
+
+# matching_pos
+# PositiveDataset(length=441535, label=1, seed=42)
+# matching_neg
+# PositiveDataset(length=8014400, seed=42)
+# matching_fp
+# FalsePositiveDataset(length=7893869, n_fp_matching=50)
+# relation_pos
+# PositiveDataset(length=1499715, label=1, seed=42)
+# relation_fp.shape
+# (7794913, 6)
 
 
 # for i in tqdm(range(len(ds_all))):

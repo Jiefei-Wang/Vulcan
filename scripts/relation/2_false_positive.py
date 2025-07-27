@@ -3,7 +3,7 @@ import os
 from modules.TOKENS import TOKENS
 from modules.ModelFunctions import get_ST_model
 from modules.CodeBlockExecutor import trace, tracedf
-from modules.FalsePositives import get_false_positives
+from modules.FalsePositives import getFalsePositives
 
 omop_base_path = "data/omop_feather"
 matching_base_path = "data/matching"
@@ -53,10 +53,10 @@ model, tokenizer = get_ST_model(base_model)
 
 n_fp_relation = 50
 
-fp_relation = get_false_positives(
+fp_relation = getFalsePositives(
     model=model,
-    corpus_concepts=corpus,
-    query_concepts=query,
+    corpus_names=corpus,
+    query_names=query,
     n_fp=n_fp_relation,
     blacklist=blacklist,
     repos='relation_corpus_model'

@@ -1,5 +1,3 @@
-# At the top of your module
-from operator import index
 import faiss
 import pandas as pd
 import duckdb
@@ -13,7 +11,7 @@ def is_initialized(repos='default'):
 
 def init_repository(repos='default'):
     GLOBAL_SPACE[repos] = {
-            'corpus_concepts': None,
+            'corpus_df': None,
             'model': None,
             'faiss_index': None,
             'is_initialized': False
@@ -23,22 +21,31 @@ def delete_repository(repos='default'):
     if repos in GLOBAL_SPACE:
         del GLOBAL_SPACE[repos]
 
-def build_index(model, corpus_concepts, corpus_embeddings=None, nlist=100, repos='default'):
+def build_index(model, corpus_ids, corpus_names, corpus_embeddings=None, repos='default'):
     """
     Args:
         model: SentenceTransformer model to use for embeddings
-        corpus_concepts: A dataframe with ['concept_id', 'concept_name'] columns
+        corpus_ids: List of concept IDs in the corpus
+        corpus_names: List of concepts for the corpus
     """
+    if len(corpus_ids) != len(corpus_names):
+        raise ValueError("Length of corpus_ids and corpus_names must match")
+    if not corpus_ids:
+        raise ValueError("corpus_ids cannot be empty")
+    
     init_repository(repos)
-    corpus_concepts = corpus_concepts[['concept_id', 'concept_name']].reset_index(drop=True)
-    corpus_concepts['index'] = corpus_concepts.index
+    corpus_df = pd.DataFrame({
+        'corpus_id': corpus_ids,
+        'corpus_name': corpus_names
+    })
+    corpus_df['index'] = corpus_df.index
     
     
     GLOBAL_SPACE[repos]['model'] = model
-    GLOBAL_SPACE[repos]['corpus_concepts'] = corpus_concepts
+    GLOBAL_SPACE[repos]['corpus_df'] = corpus_df
 
     if corpus_embeddings is None:
-        concept_names = corpus_concepts['concept_name'].tolist()
+        concept_names = corpus_df['corpus_name'].tolist()
         corpus_embeddings = model.encode(concept_names, normalize_embeddings=True)
 
     # Your existing code
@@ -66,13 +73,14 @@ def build_index(model, corpus_concepts, corpus_embeddings=None, nlist=100, repos
     return corpus_embeddings
     
 
-def search_similar(query_ids, query_texts, query_embeddings=None, top_k=5, repos='default'):
+def search_similar(query_ids, query_names, query_embeddings=None, top_k=5, repos='default'):
     """
     Args:
-        query_texts: List of query texts to search for
+        query_ids: List of concept IDs to search for
+        query_names: List of query names to search for
         top_k: Number of top results to return
     Returns:
-        A dataframe with ['query_concept_id', 'query_text', 'concept_id', 'concept_name', 'score'] columns
+        A dataframe with ['query_id', 'query_name', 'corpus_id', 'corpus_name', 'score'] columns
     """
     if not is_initialized(repos):
         raise ValueError("Index not built. Call build_index() first.")
@@ -81,9 +89,9 @@ def search_similar(query_ids, query_texts, query_embeddings=None, top_k=5, repos
     faiss_index = GLOBAL_SPACE[repos]['faiss_index']
 
     if query_embeddings is None:
-        query_embeddings = model.encode(query_texts, normalize_embeddings=True)
+        query_embeddings = model.encode(query_names, normalize_embeddings=True)
     
-    embeddings = query_embeddings.astype('float32')
+    embeddings = query_embeddings.astype('float16')
     # faiss_index.nprobe = nprobe 
     batch_size = 1024
     scores, indices = [], []
@@ -96,21 +104,21 @@ def search_similar(query_ids, query_texts, query_embeddings=None, top_k=5, repos
     # scores, indices = faiss_index.search(query_embeddings.astype('float32'), top_k)
 
     # turn indices into concept_id
-    corpus_concepts = GLOBAL_SPACE[repos]['corpus_concepts']
+    corpus_df = GLOBAL_SPACE[repos]['corpus_df']
 
     search_results = pd.DataFrame({
-        'query_concept_id': query_ids,
-        'query_text': query_texts,
+        'query_id': query_ids,
+        'query_name': query_names,
         'top_k_indices': indices,
         'score': scores
     }).explode(['top_k_indices', 'score']).reset_index(drop=True)
     
 
     search_results = duckdb.query("""
-        SELECT query_concept_id, query_text, concept_id, concept_name, score
+        SELECT query_id, query_name, corpus_id, corpus_name, score
         FROM search_results
-        JOIN corpus_concepts ON search_results.top_k_indices = corpus_concepts.index
-        where REPLACE(LOWER(query_text), ' ', '') != REPLACE(LOWER(concept_name), ' ', '')
+        JOIN corpus_df ON search_results.top_k_indices = corpus_df.index
+        where REPLACE(LOWER(query_name), ' ', '') != REPLACE(LOWER(corpus_name), ' ', '')
     """).df()
     
     return search_results

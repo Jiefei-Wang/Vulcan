@@ -2,7 +2,7 @@ import os
 import pandas as pd
 from modules.ModelFunctions import get_ST_model
 from modules.CodeBlockExecutor import trace, tracedf
-from modules.FalsePositives import get_false_positives
+from modules.FalsePositives import getFalsePositives
 
 
 n_fp_matching = 50
@@ -21,9 +21,9 @@ tracedf(target_concepts)
 base_model = 'ClinicalBERT'
 model, tokenizer = get_ST_model(base_model)
 
-fp = get_false_positives(
+fp = getFalsePositives(
     model=model,
-    corpus_concepts=target_concepts,
+    corpus_names=target_concepts,
     n_fp=n_fp_matching,
     repos='target_concepts_initial_model'
 )

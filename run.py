@@ -63,3 +63,11 @@ with open('scripts/ML/2_train.py', encoding="UTF-8") as f:
 ########################
 with open('sanity/sanity_ML_data.py') as f:
     exec(f.read())
+
+
+exec(open('tests/test_dataset.py').read())
+
+exec(open('tests\test_FaissDB.py').read())
+
+
+exec(open('tests/test_FalsePositives.py').read())
