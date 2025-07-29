@@ -176,6 +176,10 @@ class FalsePositiveDataset():
     def add_model(self, model):
         self.model = model
     
+    def delete_repository(self):
+        delete_repository(repos=self.repos)
+    
+    
     def resample(self, seed=None):
         corpus_ids = self.corpus_ids
         corpus_names = self.corpus_names
@@ -187,7 +191,6 @@ class FalsePositiveDataset():
         n_fp = self.n_fp
         repos = self.repos
 
-        delete_repository(repos=repos)
         fp = getFalsePositives(
             model=model,
             corpus_ids=corpus_ids,
@@ -284,6 +287,10 @@ class CombinedDataset():
         return self
     
     def resample(self, seed=None):
+        for name, dataset in self.datasets.items():
+            if hasattr(dataset, "delete_repository"):
+                dataset.delete_repository()
+        
         for name, dataset in self.datasets.items():
             ## check if it has a resample method
             ## for data.frame, we just ignore it

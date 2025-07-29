@@ -21,6 +21,8 @@ from modules.BlockTokenizer import BlockTokenizer
 from modules.timed_logger import logger
 from modules.Dataset import PositiveDataset, NegativeDataset, FalsePositiveDataset, CombinedDataset
 from modules.metrics import evaluate_embedding_similarity_with_mrr
+
+from modules.FaissDB import is_initialized
 logger.reset_timer()
 
 
@@ -38,7 +40,7 @@ use_relation = True
 if True:
     if use_relation:
         # continue training with relation data
-        model, tokenizer, _ = auto_load_model("output/matching_model")
+        model, tokenizer, _ = auto_load_model("output/relation_with_token")
     else:
         # start from scratch
         model, tokenizer = get_ST_model(base_model)
@@ -62,12 +64,21 @@ logger.log("Loading training data")
 matching_base_path = "data/matching"
 relation_base_path = "data/relation"
 seed = 42
-n_pos_matching = 10
-n_neg_matching = 50
-n_neg_relation = 50
-n_fp_matching = 50
-n_pos_relation = 1000
-n_fp_relation = 50
+
+if not use_relation:
+    n_pos_matching = 20
+    n_neg_matching = 50
+    n_fp_matching = 50
+else:
+    n_pos_matching = 20
+    n_neg_matching = 20
+    n_fp_matching = 20
+    n_pos_relation = 20
+    n_neg_relation = 20
+    n_fp_relation = 20
+    
+
+
 
 target_concepts = pd.read_feather(os.path.join(matching_base_path, 'target_concepts.feather'))
 matching_name_bridge = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_name_bridge_train.feather'))
@@ -95,16 +106,18 @@ matching_neg = NegativeDataset(
 
 
 
-matching_fp_path = os.path.join(matching_base_path, f'matching_fp_{n_fp_matching}.feather')
+# matching_fp_path = os.path.join(matching_base_path, f'matching_fp_{n_fp_matching}.feather')
 matching_fp = FalsePositiveDataset(
     corpus_ids=target_concepts['concept_id'],
     corpus_names=target_concepts['concept_name'],
     n_fp=n_fp_matching,
-    existing_path=matching_fp_path,
-    repos='training_matching_false_positive'
+    # existing_path=matching_fp_path,
+    repos='training_target_false_positive'
 )
 matching_fp.add_model(model)
+matching_fp.resample()
 
+is_initialized("training_target_false_positive")
 
 
 if use_relation:
@@ -118,8 +131,16 @@ if use_relation:
         max_elements=n_pos_relation,
         seed=seed
     )
+    
+    relation_neg = NegativeDataset(
+        target_concepts=target_concepts,
+        name_table=name_table_relation,
+        blacklist_bridge=name_bridge_relation,
+        max_elements=n_neg_relation,
+        seed=seed
+    )
 
-    relation_fp_path = os.path.join(relation_base_path, f'fp_relation_{n_fp_relation}.feather')
+    # relation_fp_path = os.path.join(relation_base_path, f'fp_relation_{n_fp_relation}.feather')
     relation_fp = FalsePositiveDataset(
         corpus_ids=target_concepts['concept_id'],
         corpus_names=target_concepts['concept_name'],
@@ -128,10 +149,11 @@ if use_relation:
         n_fp=n_fp_relation,
         blacklist_from=name_bridge_relation['concept_id'],
         blacklist_to=name_bridge_relation['name_id'],
-        existing_path=relation_fp_path,
-        repos='training_relation_false_positive'
+        # existing_path=relation_fp_path,
+        repos='training_target_false_positive'
     )
     relation_fp.add_model(model)
+    relation_fp.resample()
 
 
 
@@ -142,7 +164,8 @@ if use_relation:
         matching_neg= matching_neg,
         matching_fp=matching_fp,
         relation_pos=relation_pos,
-        relation_fp=relation_fp
+        relation_fp=relation_fp,
+        relation_neg=relation_neg
     )
 else:
     ds_all = CombinedDataset(
@@ -249,6 +272,7 @@ for epoch_i in range(start_epoch, epoch_num):
         with torch.no_grad():
             ds_all = ds_all.resample(seed=epoch_i)
             ds_all = ds_all.shuffle(seed=epoch_i)
+            
             block_tokenizer.update_dataset(ds_all)
 
     batch_start = start_batch_i if epoch_i == start_epoch else 0

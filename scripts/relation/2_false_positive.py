@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 from modules.TOKENS import TOKENS
-from modules.ModelFunctions import get_ST_model
+from modules.ModelFunctions import get_ST_model, auto_load_model
 from modules.CodeBlockExecutor import trace, tracedf
 from modules.FalsePositives import getFalsePositives
 
@@ -21,9 +21,11 @@ tracedf(target_concepts)
 #> ['concept_id', 'concept_name']
 #> Estimated memory usage: 15.35 MB
 
-
-model, tokenizer = get_ST_model()
-n_fp_relation = 50
+# relation_base_model = "output/matching_model"
+relation_base_model = "output/relation_with_token"
+# model, tokenizer = get_ST_model(relation_base_model)
+model, tokenizer, _ = auto_load_model(relation_base_model)
+n_fp_relation = 20
 
 
 
@@ -38,27 +40,35 @@ fp_relation = getFalsePositives(
     blacklist_to=name_bridge_relation['name_id'],
     repos='target_concepts_initial_model'
 )
+# sort by query_id
+fp_relation = fp_relation.sort_values(by='query_id').reset_index(drop=True)
+
 fp_relation.to_feather(os.path.join(relation_base_path, f'fp_relation_{n_fp_relation}.feather'))
 fp_relation.iloc[0:200].to_excel(os.path.join(relation_base_path, f'fp_relation_{n_fp_relation}.xlsx'), index=False)
 
+
+tracedf(fp_relation)
+#> DataFrame dimensions: 2979773 rows × 6 columns
+#> Column names:
+#> ['query_id', 'query_name', 'corpus_id', 'corpus_name', 'score', 'label']
+#> Estimated memory usage: 624.58 MB
+
 trace(fp_relation.iloc[0])
-#> query_id                                                42513866
-#> query_name     <|parent of|>Neoplasm defined only by histolog...
-#> corpus_id                                               42514345
-#> corpus_name    Neoplasm defined only by histology: Apudoma, m...
-#> score                                                   0.874066
+#> query_id                                                   22274
+#> query_name     <|parent of|>Neoplasm of uncertain behavior of...
+#> corpus_id                                               37206233
+#> corpus_name                             Disorder of joint region
+#> score                                                   0.539325
 #> label                                                          0
 #> Name: 0, dtype: object
 
 trace(fp_relation.iloc[0:5])
-#>    query_id                                         query_name  ...     score label
-#> 0  42513866  <|parent of|>Neoplasm defined only by histolog...  ...  0.874066     0
-#> 1  42513866  <|parent of|>Neoplasm defined only by histolog...  ...  0.873393     0
-#> 2  42513866  <|parent of|>Neoplasm defined only by histolog...  ...  0.873310     0
-#> 3  42513866  <|parent of|>Neoplasm defined only by histolog...  ...  0.873119     0
-#> 4  42513866  <|parent of|>Neoplasm defined only by histolog...  ...  0.872968     0
-#> 
-#> [5 rows x 6 columns]
+#>    query_id                                         query_name  corpus_id                                        corpus_name     score  label
+#> 0     22274  <|parent of|>Neoplasm of uncertain behavior of...   37206233                           Disorder of joint region  0.539325      0
+#> 1     22274  <|parent of|>Neoplasm of uncertain behavior of...   40485387                        Neoplasm of skeletal system  0.547568      0
+#> 2     22274  <|parent of|>Neoplasm of uncertain behavior of...    4260918                          Disorder of spinal region  0.543581      0
+#> 3     22274  <|parent of|>Neoplasm of uncertain behavior of...    4055266                             Neoplasm of vocal cord  0.542198      0
+#> 4     22274  <|parent of|>Neoplasm of uncertain behavior of...   43021240  Complication associated with musculoskeletal i...  0.555451      0
 
 
 
@@ -100,16 +110,16 @@ condition_relation_train_subset_pos = query_train.merge(
 condition_relation_train_subset_pos['label'] = 1  # Positive pairs
 
 tracedf(condition_relation_train_subset_fp)
-#> DataFrame dimensions: 2445 rows × 6 columns
+#> DataFrame dimensions: 2110 rows × 6 columns
 #> Column names:
 #> ['query_id', 'query_name', 'corpus_id', 'corpus_name', 'score', 'label']
-#> Estimated memory usage: 563.92 KB
+#> Estimated memory usage: 454.02 KB
 
 tracedf(condition_relation_train_subset_pos)
-#> DataFrame dimensions: 1118 rows × 5 columns
+#> DataFrame dimensions: 3431 rows × 5 columns
 #> Column names:
 #> ['query_name', 'corpus_name', 'query_id', 'corpus_id', 'label']
-#> Estimated memory usage: 229.60 KB
+#> Estimated memory usage: 707.65 KB
 
 
 
@@ -118,12 +128,14 @@ condition_relation_train_subset = pd.concat(
     ignore_index=True
 ).reset_index(drop=True).drop(columns=['score'])
 
+condition_relation_train_subset = condition_relation_train_subset.sort_values(by=['query_id', 'label']).reset_index(drop=True)
+
 
 tracedf(condition_relation_train_subset)
-#> DataFrame dimensions: 3563 rows × 5 columns
+#> DataFrame dimensions: 5541 rows × 5 columns
 #> Column names:
 #> ['query_name', 'corpus_name', 'query_id', 'corpus_id', 'label']
-#> Estimated memory usage: 802.13 KB
+#> Estimated memory usage: 1.12 MB
 
 condition_relation_train_subset.to_feather(os.path.join(relation_base_path, 'condition_relation_train_subset.feather'))
 

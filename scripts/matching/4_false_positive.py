@@ -19,6 +19,7 @@ condition_matching_test_pos = pd.read_feather(os.path.join(output_dir, 'conditio
 condition_matching_name_bridge_train = pd.read_feather(os.path.join(output_dir, 'condition_matching_name_bridge_train.feather'))
 condition_matching_name_table_train = pd.read_feather(os.path.join(output_dir, 'condition_matching_name_table_train.feather'))
 
+condition_matching_name_table_train[condition_matching_name_table_train.name_id==1128]
 ## sentence1(concept_name), sentence2 (name), concept_id1, concept_id2
 condition_matching_valid_pos_pair = condition_matching_valid_pos.rename(
     columns={
@@ -63,11 +64,13 @@ matching_fp = getFalsePositives(
     n_fp=n_fp_matching,
     repos='target_concepts_initial_model'
 )
-matching_fp.to_feather(os.path.join(output_dir, f'matching_fp_{n_fp_matching}.feather'))
+matching_fp = matching_fp.sort_values(by='query_id').reset_index(drop=True)
 
+matching_fp.to_feather(os.path.join(output_dir, f'matching_fp_{n_fp_matching}.feather'))
+matching_fp.iloc[0:200].to_excel(os.path.join(output_dir, f'matching_fp_{n_fp_matching}.xlsx'), index=False)
 
 tracedf(matching_fp)
-#> DataFrame dimensions: 7893791 rows × 6 columns
+#> DataFrame dimensions: 7892160 rows × 6 columns
 #> Column names:
 #> ['query_id', 'query_name', 'corpus_id', 'corpus_name', 'score', 'label']
 #> Estimated memory usage: 1.62 GB
@@ -140,10 +143,10 @@ condition_matching_test_fp = getFalsePositives(
 
 
 tracedf(condition_matching_train_subset_fp)
-#> DataFrame dimensions: 2391 rows × 6 columns
+#> DataFrame dimensions: 2381 rows × 6 columns
 #> Column names:
 #> ['query_id', 'query_name', 'corpus_id', 'corpus_name', 'score', 'label']
-#> Estimated memory usage: 574.72 KB
+#> Estimated memory usage: 572.57 KB
 
 tracedf(condition_matching_train_subset_pos)
 #> DataFrame dimensions: 579 rows × 5 columns
@@ -152,13 +155,13 @@ tracedf(condition_matching_train_subset_pos)
 #> Estimated memory usage: 124.60 KB
 
 tracedf(condition_matching_valid_fp)
-#> DataFrame dimensions: 2314 rows × 6 columns
+#> DataFrame dimensions: 2319 rows × 6 columns
 #> Column names:
 #> ['query_id', 'query_name', 'corpus_id', 'corpus_name', 'score', 'label']
-#> Estimated memory usage: 468.20 KB
+#> Estimated memory usage: 467.77 KB
 
 tracedf(condition_matching_test_fp)
-#> DataFrame dimensions: 20898 rows × 6 columns
+#> DataFrame dimensions: 20877 rows × 6 columns
 #> Column names:
 #> ['query_id', 'query_name', 'corpus_id', 'corpus_name', 'score', 'label']
 #> Estimated memory usage: 4.13 MB
@@ -169,26 +172,34 @@ condition_matching_train_subset = pd.concat([condition_matching_train_subset_pos
 condition_matching_valid = pd.concat([condition_matching_valid_pos_pair, condition_matching_valid_fp[columns]], ignore_index=True)
 condition_matching_test = pd.concat([condition_matching_test_pos_pair, condition_matching_test_fp[columns]], ignore_index=True)
 
+condition_matching_train_subset = condition_matching_train_subset.sort_values(by=['query_id', 'label']).reset_index(drop=True)
+condition_matching_valid = condition_matching_valid.sort_values(by=['query_id', 'label']).reset_index(drop=True)
+condition_matching_test = condition_matching_test.sort_values(by=['query_id', 'label']).reset_index(drop=True)
+
+
 
 condition_matching_train_subset.to_feather(os.path.join(output_dir, 'condition_matching_train_subset.feather'))
 condition_matching_valid.to_feather(os.path.join(output_dir, 'condition_matching_valid.feather'))
 condition_matching_test.to_feather(os.path.join(output_dir, 'condition_matching_test.feather'))
 
+condition_matching_train_subset.to_excel(os.path.join(output_dir, 'condition_matching_train_subset.xlsx'), index=False)
+condition_matching_valid.to_excel(os.path.join(output_dir, 'condition_matching_valid.xlsx'), index=False)
+condition_matching_test.to_excel(os.path.join(output_dir, 'condition_matching_test.xlsx'), index=False)
 
 tracedf(condition_matching_train_subset)
-#> DataFrame dimensions: 2970 rows × 5 columns
+#> DataFrame dimensions: 2960 rows × 5 columns
 #> Column names:
 #> ['query_name', 'corpus_name', 'query_id', 'corpus_id', 'label']
-#> Estimated memory usage: 680.84 KB
+#> Estimated memory usage: 678.72 KB
 
 tracedf(condition_matching_valid)
-#> DataFrame dimensions: 2810 rows × 5 columns
+#> DataFrame dimensions: 2815 rows × 5 columns
 #> Column names:
 #> ['corpus_name', 'query_name', 'corpus_id', 'query_id', 'label']
-#> Estimated memory usage: 542.51 KB
+#> Estimated memory usage: 541.49 KB
 
 tracedf(condition_matching_test)
-#> DataFrame dimensions: 25368 rows × 5 columns
+#> DataFrame dimensions: 25347 rows × 5 columns
 #> Column names:
 #> ['corpus_name', 'query_name', 'corpus_id', 'query_id', 'label']
 #> Estimated memory usage: 4.79 MB

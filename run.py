@@ -36,7 +36,7 @@ execute_and_embed('scripts/matching/4_false_positive.py')
 from modules.CodeBlockExecutor import execute_and_embed
 
 execute_and_embed('scripts/relation/1_positive_relation.py')
-    
+
 
 execute_and_embed('scripts/relation/2_false_positive.py')
 
@@ -50,7 +50,7 @@ from modules.CodeBlockExecutor import execute_and_embed
 
 with open('scripts/ML/1_train.py', encoding="UTF-8") as f:
     exec(f.read())
-    
+
 
 with open('scripts/ML/2_test.py', encoding="UTF-8") as f:
     exec(f.read())

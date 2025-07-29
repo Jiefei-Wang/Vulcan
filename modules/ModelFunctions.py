@@ -8,7 +8,8 @@ from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer
 from modules.TOKENS import TOKENS
 
-special_tokens = [TOKENS.child]
+## add all special tokens
+special_tokens = TOKENS.all_tokens
 
 def get_base_model(base_model, special_tokens):
     model = SentenceTransformer(base_model)
