@@ -37,7 +37,7 @@ base_model = 'ClinicalBERT'
 use_relation = True
 
 
-if True:
+if False:
     if use_relation:
         # continue training with relation data
         model, tokenizer, _ = auto_load_model("output/relation_with_token")
@@ -48,12 +48,12 @@ if True:
     start_batch_i = 0
     start_global_step = 0
 else:
-    model, tokenizer, train_config = auto_load_model("output/finetune/2025-07-16_17-39-33")
+    model, tokenizer, train_config = auto_load_model("output/finetune/2025-07-28_23-20-24")
 
     start_epoch = train_config.get('epoch', 0)
     start_batch_i = train_config.get('batch_i', 0) + 1
     start_global_step = train_config.get('global_step', 0) + 1
-    use_relation = train_config.get('use_relation', False)
+    use_relation = train_config.get('use_relation', True)
     
 
 #################################
@@ -282,7 +282,8 @@ for epoch_i in range(start_epoch, epoch_num):
         train_config = {
             'global_step': global_step,
             'epoch': epoch_i,
-            'batch_i': batch_i
+            'batch_i': batch_i,
+            'use_relation': use_relation
         }
         
         # Forward pass

@@ -2,6 +2,7 @@ import faiss
 import pandas as pd
 import duckdb
 from tqdm import tqdm
+import numpy as np
 
 GLOBAL_SPACE = {
 }
@@ -48,6 +49,12 @@ def build_index(model, corpus_ids, corpus_names, corpus_embeddings=None, repos='
         concept_names = corpus_df['corpus_name'].tolist()
         corpus_embeddings = model.encode(concept_names, normalize_embeddings=True)
 
+    # if corpus_embeddings is a pandas DataFrame, convert to numpy array
+    if isinstance(corpus_embeddings, pd.Series):
+        corpus_embeddings = np.array(corpus_embeddings.tolist())
+    elif isinstance(corpus_embeddings, list):
+        corpus_embeddings = np.array(corpus_embeddings)
+    
     # Your existing code
     dimension = corpus_embeddings.shape[1]
     # faiss_index = faiss.IndexFlatIP(dimension)

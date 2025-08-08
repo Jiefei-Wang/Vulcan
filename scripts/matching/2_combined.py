@@ -76,13 +76,16 @@ matching_map_table = duckdb.query("""
 # remove the mapping that maps to the concept name itself
 concept_id_to_name = concept[['concept_id', 'concept_name']]
 matching_map_table = duckdb.query("""
-    SELECT matching_map_table.concept_id, source, source_id, type, name
+    with concept_id_to_name2 as (
+        select concept_id, LOWER(REGEXP_REPLACE(concept_name, '[^a-zA-Z0-9]', '', 'g')) AS concept_name_stripped
+        from concept_id_to_name
+    )
+    SELECT concept_id_to_name2.concept_id, concept_id_to_name2.concept_name_stripped, source, source_id, type, name, name_stripped
     FROM matching_map_table
-    INNER JOIN concept_id_to_name
-    ON matching_map_table.concept_id = concept_id_to_name.concept_id
-    WHERE LOWER(REGEXP_REPLACE(name, '[^a-zA-Z0-9]', '', 'g')) != LOWER(REGEXP_REPLACE(concept_name, '[^a-zA-Z0-9]', '', 'g'))
+    INNER JOIN concept_id_to_name2
+    ON matching_map_table.concept_id = concept_id_to_name2.concept_id
+    WHERE name_stripped != concept_name_stripped
 """).df()
-
 
 
 matching_map_table = matching_map_table[['concept_id', 'source', 'source_id', 'type', 'name']].reset_index(drop=True)

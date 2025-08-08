@@ -3,6 +3,7 @@ import os
 import datetime
 import shutil
 import re
+import numpy as np
 
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer
@@ -224,3 +225,21 @@ def get_ST_model(base_model = 'ClinicalBERT'):
     else:
         model, tokenizer, _ = auto_load_model(saved_path)
     return model, tokenizer
+
+
+
+def encode_concepts(model, concepts, normalize_embeddings=True):
+    """
+    Encodes a list of concepts using the provided model. Handle duplicates
+    """
+    if isinstance(concepts, list):
+        concepts = np.array(concepts) 
+
+    unique_concepts = concepts.unique()
+    embeddings = model.encode(
+        unique_concepts.tolist(), 
+        normalize_embeddings=normalize_embeddings
+    )
+    concept_to_embedding = dict(zip(unique_concepts, embeddings))
+    concept_embeddings = np.array([concept_to_embedding[concept] for concept in concepts])
+    return concept_embeddings

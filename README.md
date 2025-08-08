@@ -110,3 +110,20 @@ conda install conda-forge::faiss-gpu
 ```
 
 
+
+# Idea
+unknown: prostate cancer
+std: Malignant tumor of prostate
+
+parent: Malignant neoplasm of abdomen
+
+
+- find top 100 similar std concepts to: prostate cancer
+    - top 1: Malignant tumor of prostate, score: 0.5
+- find all parents of Malignant tumor of prostate
+    - parents = ['Malignant neoplasm of abdomen', 'Malignant tumor of pelvis', ...]
+
+- calculate similarity between 
+    - 'Malignant neoplasm of abdomen' and  "<|parent of|> prostate cancer", score: 0.7 
+    - 'Malignant tumor of pelvis' and  "<|parent of|> prostate cancer" , score: 0.6 
+- Combine direct matching and relation scores 0.5 + 0.6
