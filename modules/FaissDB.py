@@ -129,4 +129,3 @@ def search_similar(query_ids, query_names, query_embeddings=None, top_k=5, repos
     """).df()
     
     return search_results
-
