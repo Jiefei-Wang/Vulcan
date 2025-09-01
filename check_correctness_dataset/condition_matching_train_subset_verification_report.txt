@@ -1,0 +1,65 @@
+CONDITION MATCHING VERIFICATION REPORT
+============================================================
+Excel File: verify_dataset/Condition Matching Train Subset.xlsx
+Total Rows: 2960
+Timestamp: 2025-07-29 00:11:23.994338
+
+SUMMARY: 922 total issues found
+Issue breakdown:
+  - Label issues: 10
+  - Name-ID misalignments: 0
+  - Identical matches: 0
+  - Non-OMOP rows: 456
+  - Non-OMOP label rows: 456
+
+LABEL ACCURACY ERRORS (9 total):
+----------------------------------------
+Row 115: query_id=16701, corpus_id=4318691, actual=1, expected=0
+  Chain: name_id(16701) → source_id(40390208) → concept_ids([437541])
+  Pair exists: False
+
+Row 515: query_id=83062, corpus_id=4110106, actual=1, expected=0
+  Chain: name_id(83062) → source_id(40401899) → concept_ids([4111341])
+  Pair exists: False
+
+Row 600: query_id=103980, corpus_id=374267, actual=1, expected=0
+  Chain: name_id(103980) → source_id(3119545) → concept_ids([441775])
+  Pair exists: False
+
+Row 676: query_id=121415, corpus_id=137053, actual=1, expected=0
+  Chain: name_id(121415) → source_id(1244245) → concept_ids([1244245])
+  Pair exists: False
+
+Row 753: query_id=134951, corpus_id=4290000, actual=1, expected=0
+  Chain: name_id(134951) → source_id(44825156) → concept_ids([436910])
+  Pair exists: False
+
+Row 1012: query_id=183298, corpus_id=4180793, actual=1, expected=0
+  Chain: name_id(183298) → source_id(40650441) → concept_ids([199754])
+  Pair exists: False
+
+Row 1228: query_id=221984, corpus_id=4310929, actual=1, expected=0
+  Chain: name_id(221984) → source_id(4032334) → concept_ids([4032334])
+  Pair exists: False
+
+Row 1736: query_id=326270, corpus_id=4099995, actual=1, expected=0
+  Chain: name_id(326270) → source_id(3219432) → concept_ids([4289309])
+  Pair exists: False
+
+Row 2056: query_id=397652, corpus_id=4148529, actual=1, expected=0
+  Chain: name_id(397652) → source_id(45552899) → concept_ids([4341520])
+  Pair exists: False
+
+
+Label issue: Found 9 incorrect OMOP labels out of 2504 verified
+
+NON-OMOP ROWS:
+------------------------------
+Total non-OMOP rows: 456
+Details exported to Excel file for manual review
+
+NON-OMOP LABEL ROWS:
+------------------------------
+Total non-OMOP label rows: 456
+Details exported to Excel file for manual review
+
