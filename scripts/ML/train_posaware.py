@@ -57,10 +57,9 @@ else:
     model, tokenizer, train_config = None, None, {}
 
 if model is None:
-    # Load base ST model directly from Hugging Face
-    logger.log(f"Loading base model from Hugging Face: {base_model}")
-    model = SentenceTransformer(base_model)
-    tokenizer = model.tokenizer  # Get tokenizer from the model
+    # Load base ST model with special tokens for relation support
+    logger.log(f"Loading base model with special tokens: {base_model}")
+    model, tokenizer = get_ST_model(base_model)
     train_config = {}
 
 start_epoch = train_config.get('epoch', 0)
@@ -82,16 +81,16 @@ seed = 42
 
 # Much smaller default dataset sizes
 if not use_relation:
-    n_pos_matching = 5   # Reduced from 20
-    n_neg_matching = 10  # Reduced from 50
-    n_fp_matching = 5    # Reduced from 50
+    n_pos_matching = 5  
+    n_neg_matching = 10  
+    n_fp_matching = 5   
 else:
-    n_pos_matching = 5   # Reduced from 20
-    n_neg_matching = 5   # Reduced from 20
-    n_fp_matching = 5    # Reduced from 20
-    n_pos_relation = 5   # Reduced from 20
-    n_neg_relation = 5   # Reduced from 20
-    n_fp_relation = 5    # Reduced from 20
+    n_pos_matching = 5  
+    n_neg_matching = 5  
+    n_fp_matching = 5   
+    n_pos_relation = 5  
+    n_neg_relation = 5  
+    n_fp_relation = 5   
 
 # Override mined negatives via CLI if provided
 if args.num_neg_matching is not None:
@@ -235,31 +234,44 @@ condition_matching_valid = None
 
 # Try to load OMOP CIEL validation data first
 try:
+    from modules.ChromaVecDB import ChromaVecDB
+
     logger.log("Attempting to load OMOP CIEL validation data")
     conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
     conditions = conceptEX[conceptEX['domain_id'] == 'Condition']
     std_conditions = conditions[conditions['standard_concept'] == 'S']
     nonstd_conditions = conditions[conditions['standard_concept'] != 'S']
 
-    # Create validation dataset: CIEL concepts mapping to standard concepts
-    ciel_validation = nonstd_conditions[
-        ['concept_id', 'concept_name', 'std_concept_id']
-    ][nonstd_conditions['vocabulary_id'] == 'CIEL'].copy()
-    ciel_validation['std_concept_id'] = ciel_validation['std_concept_id'].str[0].astype(int)
+    # Database: standard conditions
+    database = std_conditions[['concept_id', 'concept_name']]
 
-    # Merge with standard concept names
+    # Query: CIEL concepts
+    ciel_query_df = nonstd_conditions[
+        ['concept_id', 'concept_name', 'std_concept_id']
+    ][nonstd_conditions['vocabulary_id'] == 'CIEL']
+
+    # Store CIEL validation data for later evaluation use
+    global ciel_validation_data
+    ciel_validation_data = {
+        'database': database,
+        'query_df': ciel_query_df
+    }
+
+    # Create a simple validation dataset for backward compatibility with existing evaluation code
+    # This maintains the same format for the training loop evaluation
+    y_true = ciel_query_df['std_concept_id'].str[0].astype(int)
     std_concept_names = std_conditions[['concept_id', 'concept_name']].rename(
         columns={'concept_id': 'std_concept_id', 'concept_name': 'std_concept_name'}
     )
-    ciel_validation = ciel_validation.merge(std_concept_names, on='std_concept_id', how='inner')
+    ciel_validation = ciel_query_df.merge(std_concept_names, left_on=y_true, right_on='std_concept_id', how='inner')
 
-    # Format for evaluation: rename columns to match expected format
     condition_matching_valid = ciel_validation[['concept_name', 'std_concept_name']].rename(
         columns={'concept_name': 'query', 'std_concept_name': 'target'}
     )
     logger.log(f"Loaded OMOP CIEL validation data: {len(condition_matching_valid)} samples")
 except Exception as e:
     logger.log(f"Could not load OMOP CIEL validation data: {e}")
+    ciel_validation_data = None
     # Fallback to original validation file if available
     fallback_valid_path = os.path.join(matching_base_path, 'condition_matching_valid.feather')
     if os.path.exists(fallback_valid_path):
@@ -302,19 +314,16 @@ max_saves = 4
 loss_func = losses.ContrastiveLoss(model=model)
 optimizer = AdamW(model.parameters(), lr=learning_rate)
 
-# Device detection with MPS support for Mac
+# Device detection - CUDA only
 if torch.cuda.is_available():
     device_type = "cuda"
     device = torch.device("cuda")
     print("Using CUDA GPU acceleration")
-elif torch.backends.mps.is_available():
-    device_type = "mps"
-    device = torch.device("mps")
-    print("Using MPS GPU acceleration (Mac)")
 else:
     device_type = "cpu"
     device = torch.device("cpu")
     print("Using CPU")
+
 
 model = model.to(device)
 loss_func = loss_func.to(device)
@@ -344,13 +353,8 @@ scheduler = get_linear_schedule_with_warmup(
     num_training_steps=max(1, total_steps - start_global_step),
 )
 
-# GradScaler setup - MPS doesn't support GradScaler yet, so disable for MPS
-if device_type == "mps":
-    scaler = GradScaler(enabled=False)  # Disable mixed precision for MPS
-    fp16 = False  # Force disable fp16 for MPS
-    print("Note: Mixed precision disabled for MPS compatibility")
-else:
-    scaler = GradScaler(device=device_type, enabled=fp16)
+
+scaler = GradScaler(device=device_type, enabled=fp16)
 
 global_step = start_global_step
 best_eval_accuracy = float('-inf')
@@ -463,6 +467,67 @@ for epoch_i in range(start_epoch, epoch_num):
                     wandb.log({"eval/best_accuracy": best_eval_accuracy}, step=global_step)
 
 progress_bar.close()
+
+# Final CIEL evaluation using ChromaVecDB approach (like poster.py)
+if 'ciel_validation_data' in globals() and ciel_validation_data is not None:
+    try:
+        logger.log("Performing final CIEL evaluation with ChromaVecDB")
+
+        database = ciel_validation_data['database']
+        query_df = ciel_validation_data['query_df']
+
+        # Create vector database and query
+        db = ChromaVecDB(model=model, name='final_ciel_eval', path=None)
+        db.empty_collection()
+        db.store_concepts(database, batch_size=5461)
+
+        max_k = 50
+        res = db.query(query_df[['concept_name']], n_results=max_k)
+
+        y_true = query_df['std_concept_id'].str[0].astype(int).tolist()
+        pred_lists = res['ids']
+
+        # Calculate comprehensive metrics
+        k_list = [1, 10, 50]
+        final_ciel_metrics = {}
+
+        for k in k_list:
+            hits = [1 if (y_true[i] in pred_lists[i][:k]) else 0 for i in range(len(y_true))]
+            acc_k = sum(hits) / len(hits)
+            final_ciel_metrics[f'Final_Accuracy@{k}'] = acc_k
+
+        # Calculate MRR
+        reciprocal_ranks = []
+        for true_id, preds in zip(y_true, pred_lists):
+            try:
+                rank = preds.index(true_id) + 1
+                reciprocal_ranks.append(1.0 / rank)
+            except ValueError:
+                reciprocal_ranks.append(0.0)
+
+        mrr = sum(reciprocal_ranks) / len(reciprocal_ranks)
+        final_ciel_metrics['Final_MRR'] = mrr
+
+        print("\n=== Final CIEL Evaluation Results ===")
+        print(f"Final MRR: {mrr:.4f}")
+        print(f"Final Accuracy@1: {final_ciel_metrics['Final_Accuracy@1']:.4f}")
+        print(f"Final Accuracy@10: {final_ciel_metrics['Final_Accuracy@10']:.4f}")
+        print(f"Final Accuracy@50: {final_ciel_metrics['Final_Accuracy@50']:.4f}")
+
+        if not args.no_wandb:
+            wandb.log(final_ciel_metrics)
+
+        # Save final metrics to file
+        try:
+            import json
+            with open(os.path.join(output_dir, 'final_ciel_metrics.json'), 'w') as f:
+                json.dump(final_ciel_metrics, f, indent=2)
+        except Exception as e:
+            logger.log(f"Warning: Could not save final CIEL metrics: {e}")
+
+    except Exception as e:
+        logger.log(f"Final CIEL evaluation failed: {e}")
+
 if not args.no_wandb:
     wandb.finish()
 logger.done()

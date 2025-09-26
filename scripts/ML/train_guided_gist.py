@@ -88,9 +88,8 @@ def main():
     if args.base_checkpoint != 'none' and os.path.exists(args.base_checkpoint):
         model, tokenizer, _ = auto_load_model(args.base_checkpoint)
     else:
-        logger.log('Loading base model: sentence-transformers/all-MiniLM-L6-v2')
-        model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-        tokenizer = model.tokenizer
+        logger.log('Loading base model: sentence-transformers/all-MiniLM-L6-v2 with special tokens')
+        model, tokenizer = get_ST_model('sentence-transformers/all-MiniLM-L6-v2')
 
     # Load guide model (kept frozen by the loss)
     guide = SentenceTransformer(args.guide_model)
@@ -155,32 +154,58 @@ def main():
 
     # OMOP CIEL validation (primary)
     try:
+        from modules.ChromaVecDB import ChromaVecDB
+
         logger.log('Loading OMOP CIEL validation data')
         conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
         conditions = conceptEX[conceptEX['domain_id'] == 'Condition']
         std_conditions = conditions[conditions['standard_concept'] == 'S']
         nonstd_conditions = conditions[conditions['standard_concept'] != 'S']
 
-        # Create validation dataset: CIEL concepts mapping to standard concepts
-        ciel_validation = nonstd_conditions[
+        # Database: standard conditions
+        database = std_conditions[['concept_id', 'concept_name']]
+
+        # Query: CIEL concepts
+        query_df = nonstd_conditions[
             ['concept_id', 'concept_name', 'std_concept_id']
-        ][nonstd_conditions['vocabulary_id'] == 'CIEL'].copy()
-        ciel_validation['std_concept_id'] = ciel_validation['std_concept_id'].str[0].astype(int)
+        ][nonstd_conditions['vocabulary_id'] == 'CIEL']
 
-        # Merge with standard concept names
-        std_concept_names = std_conditions[['concept_id', 'concept_name']].rename(
-            columns={'concept_id': 'std_concept_id', 'concept_name': 'std_concept_name'}
-        )
-        ciel_validation = ciel_validation.merge(std_concept_names, on='std_concept_id', how='inner')
+        # Create vector database and query
+        db = ChromaVecDB(model=model, name='ciel_eval', path=None)
+        db.empty_collection()
+        db.store_concepts(database, batch_size=5461)
 
-        # Format for evaluation
-        omop_eval_df = ciel_validation[['concept_name', 'std_concept_name']].rename(
-            columns={'concept_name': 'query', 'std_concept_name': 'target'}
-        )
+        max_k = 50
+        res = db.query(query_df[['concept_name']], n_results=max_k)
 
-        m_omop = evaluate_embedding_similarity_with_mrr(model, omop_eval_df)
-        metrics_out['omop_ciel'] = m_omop
-        print('OMOP CIEL validation MRR:', m_omop.get('MRR', m_omop.get('reciprocal_rank', 'N/A')))
+        y_true = query_df['std_concept_id'].str[0].astype(int).tolist()
+        pred_lists = res['ids']
+
+        # Calculate comprehensive metrics
+        k_list = [1, 10, 50]
+        ciel_metrics = {}
+
+        for k in k_list:
+            hits = [1 if (y_true[i] in pred_lists[i][:k]) else 0 for i in range(len(y_true))]
+            acc_k = sum(hits) / len(hits)
+            ciel_metrics[f'Accuracy@{k}'] = acc_k
+
+        # Calculate MRR
+        reciprocal_ranks = []
+        for true_id, preds in zip(y_true, pred_lists):
+            try:
+                rank = preds.index(true_id) + 1
+                reciprocal_ranks.append(1.0 / rank)
+            except ValueError:
+                reciprocal_ranks.append(0.0)
+
+        mrr = sum(reciprocal_ranks) / len(reciprocal_ranks)
+        ciel_metrics['MRR'] = mrr
+
+        metrics_out['omop_ciel'] = ciel_metrics
+        print('OMOP CIEL validation MRR:', mrr)
+        print('OMOP CIEL validation Accuracy@1:', ciel_metrics['Accuracy@1'])
+
     except Exception as e:
         print(f'Warning: Could not load OMOP CIEL validation: {e}')
 
