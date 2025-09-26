@@ -12,7 +12,7 @@ from modules.ModelFunctions import get_ST_model, auto_load_model
 from modules.timed_logger import logger
 
 
-def build_positive_pairs(matching_base_path: str, relation_base_path: str, use_relation: bool) -> Dataset:
+def build_positive_pairs(matching_base_path: str, relation_base_path: str, use_relation: bool, max_samples: int = None) -> Dataset:
     # Load matching tables
     name_table = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_name_table_train.feather'))
     name_bridge = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_name_bridge_train.feather'))
@@ -32,6 +32,11 @@ def build_positive_pairs(matching_base_path: str, relation_base_path: str, use_r
         on='concept_id'
     )[['anchor', 'positive']].drop_duplicates()
 
+    # Limit matching pairs if specified
+    if max_samples is not None:
+        match_pairs = match_pairs.sample(n=min(max_samples, len(match_pairs)), random_state=42).reset_index(drop=True)
+        logger.log(f"Limited matching pairs to {len(match_pairs)} samples")
+
     all_pairs = match_pairs
 
     # Optionally add relation positives
@@ -48,6 +53,13 @@ def build_positive_pairs(matching_base_path: str, relation_base_path: str, use_r
                 target_concepts[['concept_id', 'concept_name']].rename(columns={'concept_name': 'positive'}),
                 on='concept_id'
             )[['anchor', 'positive']].drop_duplicates()
+
+            # Limit relation pairs if specified
+            if max_samples is not None:
+                rel_samples = min(max_samples // 2, len(rel_pairs))  # Split between matching and relation
+                rel_pairs = rel_pairs.sample(n=rel_samples, random_state=42).reset_index(drop=True)
+                logger.log(f"Limited relation pairs to {len(rel_pairs)} samples")
+
             all_pairs = pd.concat([all_pairs, rel_pairs], ignore_index=True).drop_duplicates()
 
     return Dataset.from_pandas(all_pairs.reset_index(drop=True), preserve_index=False)
@@ -55,8 +67,8 @@ def build_positive_pairs(matching_base_path: str, relation_base_path: str, use_r
 
 def main():
     parser = argparse.ArgumentParser(description='Guided in-batch training with GISTEmbedLoss / CachedGISTEmbedLoss')
-    parser.add_argument('--guide-model', type=str, default='all-MiniLM-L6-v2', help='HF model name or local path for guide')
-    parser.add_argument('--base-checkpoint', type=str, default='output/finetune/2025-07-28_23-20-24', help='Path to load latest fine-tuned checkpoint; falls back to ClinicalBERT ST')
+    parser.add_argument('--guide-model', type=str, default='sentence-transformers/all-MiniLM-L6-v2', help='HF model name or local path for guide')
+    parser.add_argument('--base-checkpoint', type=str, default='none', help='Path to load checkpoint (default: none - use sentence-transformers/all-MiniLM-L6-v2)')
     parser.add_argument('--use-cached', action='store_true', help='Use CachedGISTEmbedLoss for large effective batches')
     parser.add_argument('--temperature', type=float, default=0.01, help='GIST temperature')
     parser.add_argument('--mini-batch-size', type=int, default=64, help='Mini-batch size inside CachedGIST (ignored if not cached)')
@@ -66,15 +78,19 @@ def main():
     parser.add_argument('--fp16', action='store_true')
     parser.add_argument('--no-relation', action='store_true')
     parser.add_argument('--output-dir', type=str, default=None)
+    parser.add_argument('--max-training-samples', type=int, default=200, help='Limit total training samples (default: 200)')
     args = parser.parse_args()
 
     logger.reset_timer()
     logger.log('Loading models for GIST training')
 
-    # Load train model: latest checkpoint if available, else base ST
-    model, tokenizer, _ = auto_load_model(args.base_checkpoint) if os.path.exists(args.base_checkpoint) else (None, None, None)
-    if model is None:
-        model, tokenizer = get_ST_model('ClinicalBERT')
+    # Load train model: checkpoint if specified, else use sentence-transformers/all-MiniLM-L6-v2
+    if args.base_checkpoint != 'none' and os.path.exists(args.base_checkpoint):
+        model, tokenizer, _ = auto_load_model(args.base_checkpoint)
+    else:
+        logger.log('Loading base model: sentence-transformers/all-MiniLM-L6-v2')
+        model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+        tokenizer = model.tokenizer
 
     # Load guide model (kept frozen by the loss)
     guide = SentenceTransformer(args.guide_model)
@@ -83,7 +99,7 @@ def main():
     matching_base_path = 'data/matching'
     relation_base_path = 'data/relation'
     use_relation = not args.no_relation
-    train_dataset = build_positive_pairs(matching_base_path, relation_base_path, use_relation)
+    train_dataset = build_positive_pairs(matching_base_path, relation_base_path, use_relation, args.max_training_samples)
 
     # Loss
     if args.use_cached:
@@ -115,8 +131,7 @@ def main():
         save_steps=1000,
         save_total_limit=2,
         report_to=[],  # disable HF Hub/W&B by default
-        evaluation_strategy='no',
-        do_train=True,
+        eval_strategy='no',  # Changed from evaluation_strategy
     )
 
     trainer = SentenceTransformerTrainer(
@@ -132,9 +147,42 @@ def main():
     model.save(output_dir)
     tokenizer.save_pretrained(output_dir)
 
-    # Evaluate MRR on available validation sets
+    # Evaluate MRR on OMOP CIEL validation and other available sets
     matching_base_path = 'data/matching'
     relation_base_path = 'data/relation'
+
+    metrics_out = {}
+
+    # OMOP CIEL validation (primary)
+    try:
+        logger.log('Loading OMOP CIEL validation data')
+        conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
+        conditions = conceptEX[conceptEX['domain_id'] == 'Condition']
+        std_conditions = conditions[conditions['standard_concept'] == 'S']
+        nonstd_conditions = conditions[conditions['standard_concept'] != 'S']
+
+        # Create validation dataset: CIEL concepts mapping to standard concepts
+        ciel_validation = nonstd_conditions[
+            ['concept_id', 'concept_name', 'std_concept_id']
+        ][nonstd_conditions['vocabulary_id'] == 'CIEL'].copy()
+        ciel_validation['std_concept_id'] = ciel_validation['std_concept_id'].str[0].astype(int)
+
+        # Merge with standard concept names
+        std_concept_names = std_conditions[['concept_id', 'concept_name']].rename(
+            columns={'concept_id': 'std_concept_id', 'concept_name': 'std_concept_name'}
+        )
+        ciel_validation = ciel_validation.merge(std_concept_names, on='std_concept_id', how='inner')
+
+        # Format for evaluation
+        omop_eval_df = ciel_validation[['concept_name', 'std_concept_name']].rename(
+            columns={'concept_name': 'query', 'std_concept_name': 'target'}
+        )
+
+        m_omop = evaluate_embedding_similarity_with_mrr(model, omop_eval_df)
+        metrics_out['omop_ciel'] = m_omop
+        print('OMOP CIEL validation MRR:', m_omop.get('MRR', m_omop.get('reciprocal_rank', 'N/A')))
+    except Exception as e:
+        print(f'Warning: Could not load OMOP CIEL validation: {e}')
 
     def _normalize_eval_df(df: pd.DataFrame) -> pd.DataFrame:
         d = df.copy()
@@ -150,8 +198,7 @@ def main():
             d['corpus_id'] = pd.factorize(d['corpus_name'])[0]
         return d[['corpus_name','query_name','corpus_id','query_id','label']]
 
-    metrics_out = {}
-    # Matching valid
+    # Matching valid (fallback)
     valid_path = os.path.join(matching_base_path, 'condition_matching_valid.feather')
     if os.path.exists(valid_path):
         df_valid = pd.read_feather(valid_path)

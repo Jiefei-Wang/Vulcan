@@ -1,6 +1,7 @@
 import os
 
 os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'  # Fix tokenizer concurrency issues
 
 import numpy as np
 import pandas as pd
@@ -13,7 +14,7 @@ from torch.optim import AdamW
 from torch.amp import GradScaler, autocast
 from datetime import datetime
 from transformers import get_linear_schedule_with_warmup 
-from sentence_transformers import losses
+from sentence_transformers import losses, SentenceTransformer
 
 from modules.ModelFunctions import auto_save_model, save_best_model, get_loss, get_ST_model, auto_load_model
 from modules.BlockTokenizer import BlockTokenizer
@@ -26,7 +27,7 @@ logger.reset_timer()
 
 
 # --- CLI Args ---
-parser = argparse.ArgumentParser(description="Train with positive-aware hard negative mining (built-in mine_hard_negatives)")
+parser = argparse.ArgumentParser(description="Train with positive-aware hard negative mining (built-in mine_hard_negatives) using all-MiniLM-L6-v2")
 parser.add_argument("--no-relation", action="store_true", help="Disable relation data even if files exist or config says True")
 parser.add_argument("--range-min", type=int, default=10, help="Minimum rank for candidate negatives")
 parser.add_argument("--range-max", type=int, default=50, help="Maximum rank for candidate negatives")
@@ -39,18 +40,27 @@ parser.add_argument("--no-faiss", action="store_true", help="Disable FAISS accel
 parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
 parser.add_argument("--batch-size", type=int, default=256, help="Training batch size")
 parser.add_argument("--buffer-mult", type=int, default=16, help="Buffer multiple of batch size for BlockTokenizer")
+parser.add_argument("--model-checkpoint", type=str, default="none", help="Path to model checkpoint to load (default: none - use HF base model)")
+parser.add_argument("--max-training-samples", type=int, default=None, help="Limit total training samples (default: None - use all data)")
+parser.add_argument("--no-wandb", action="store_true", help="Disable Weights & Biases logging")
 args = parser.parse_args()
 
 # --- Initialization ---
 logger.log("Loading Model (pos-aware training)")
 output_dir = f"output/finetune_posaware/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-base_model = 'ClinicalBERT'
+base_model = 'sentence-transformers/all-MiniLM-L6-v2'
 
-# Load model
-model, tokenizer, train_config = auto_load_model("output/finetune/2025-07-28_23-20-24")
+# Load model - use Hugging Face model directly or specified checkpoint
+if args.model_checkpoint and args.model_checkpoint != "none":
+    model, tokenizer, train_config = auto_load_model(args.model_checkpoint)
+else:
+    model, tokenizer, train_config = None, None, {}
+
 if model is None:
-    # fallback to base ST model if no checkpoint
-    model, tokenizer = get_ST_model(base_model)
+    # Load base ST model directly from Hugging Face
+    logger.log(f"Loading base model from Hugging Face: {base_model}")
+    model = SentenceTransformer(base_model)
+    tokenizer = model.tokenizer  # Get tokenizer from the model
     train_config = {}
 
 start_epoch = train_config.get('epoch', 0)
@@ -70,17 +80,18 @@ matching_base_path = "data/matching"
 relation_base_path = "data/relation"
 seed = 42
 
+# Much smaller default dataset sizes
 if not use_relation:
-    n_pos_matching = 20
-    n_neg_matching = 50
-    n_fp_matching = 50
+    n_pos_matching = 5   # Reduced from 20
+    n_neg_matching = 10  # Reduced from 50
+    n_fp_matching = 5    # Reduced from 50
 else:
-    n_pos_matching = 20
-    n_neg_matching = 20
-    n_fp_matching = 20
-    n_pos_relation = 20
-    n_neg_relation = 20
-    n_fp_relation = 20
+    n_pos_matching = 5   # Reduced from 20
+    n_neg_matching = 5   # Reduced from 20
+    n_fp_matching = 5    # Reduced from 20
+    n_pos_relation = 5   # Reduced from 20
+    n_neg_relation = 5   # Reduced from 20
+    n_fp_relation = 5    # Reduced from 20
 
 # Override mined negatives via CLI if provided
 if args.num_neg_matching is not None:
@@ -118,7 +129,7 @@ matching_neg = NegativeDataset(
 )
 
 # Build anchor/positive pairs for matching and mine negatives with ST builtin
-anchor_positive_match = matching_name_bridge 
+anchor_positive_match = matching_name_bridge
 anchor_positive_match = anchor_positive_match.merge(
     matching_name_table[['name_id','name']].rename(columns={'name':'anchor'}),
     on='name_id'
@@ -126,6 +137,11 @@ anchor_positive_match = anchor_positive_match.merge(
     target_concepts[['concept_id','concept_name']].rename(columns={'concept_name':'positive'}),
     on='concept_id'
 )[['anchor','positive']].drop_duplicates()
+
+# Limit training samples if specified
+if args.max_training_samples is not None:
+    logger.log(f"Limiting training data to {args.max_training_samples} samples")
+    anchor_positive_match = anchor_positive_match.sample(n=min(args.max_training_samples, len(anchor_positive_match)), random_state=seed).reset_index(drop=True)
 
 matching_fp_df = mine_negatives(
     anchor_positive_pairs=anchor_positive_match,
@@ -167,7 +183,7 @@ if use_relation and relation_available:
         seed=seed
     )
 
-    anchor_positive_rel = name_bridge_relation 
+    anchor_positive_rel = name_bridge_relation
     anchor_positive_rel = anchor_positive_rel.merge(
         name_table_relation[['name_id','name']].rename(columns={'name':'anchor'}),
         on='name_id'
@@ -175,6 +191,11 @@ if use_relation and relation_available:
         target_concepts[['concept_id','concept_name']].rename(columns={'concept_name':'positive'}),
         on='concept_id'
     )[['anchor','positive']].drop_duplicates()
+
+    # Limit relation training samples if specified
+    if args.max_training_samples is not None:
+        relation_samples = min(args.max_training_samples // 2, len(anchor_positive_rel))  # Split between matching and relation
+        anchor_positive_rel = anchor_positive_rel.sample(n=relation_samples, random_state=seed).reset_index(drop=True)
 
     relation_fp_df = mine_negatives(
         anchor_positive_pairs=anchor_positive_rel,
@@ -207,15 +228,66 @@ else:
 
 
 #################################
-# Validation data
+# Validation data (OMOP CIEL)
 #################################
 logger.log("Loading validation data")
-condition_matching_valid = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_valid.feather'))
-condition_matching_train_subset = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_train_subset.feather'))
+condition_matching_valid = None
+
+# Try to load OMOP CIEL validation data first
+try:
+    logger.log("Attempting to load OMOP CIEL validation data")
+    conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
+    conditions = conceptEX[conceptEX['domain_id'] == 'Condition']
+    std_conditions = conditions[conditions['standard_concept'] == 'S']
+    nonstd_conditions = conditions[conditions['standard_concept'] != 'S']
+
+    # Create validation dataset: CIEL concepts mapping to standard concepts
+    ciel_validation = nonstd_conditions[
+        ['concept_id', 'concept_name', 'std_concept_id']
+    ][nonstd_conditions['vocabulary_id'] == 'CIEL'].copy()
+    ciel_validation['std_concept_id'] = ciel_validation['std_concept_id'].str[0].astype(int)
+
+    # Merge with standard concept names
+    std_concept_names = std_conditions[['concept_id', 'concept_name']].rename(
+        columns={'concept_id': 'std_concept_id', 'concept_name': 'std_concept_name'}
+    )
+    ciel_validation = ciel_validation.merge(std_concept_names, on='std_concept_id', how='inner')
+
+    # Format for evaluation: rename columns to match expected format
+    condition_matching_valid = ciel_validation[['concept_name', 'std_concept_name']].rename(
+        columns={'concept_name': 'query', 'std_concept_name': 'target'}
+    )
+    logger.log(f"Loaded OMOP CIEL validation data: {len(condition_matching_valid)} samples")
+except Exception as e:
+    logger.log(f"Could not load OMOP CIEL validation data: {e}")
+    # Fallback to original validation file if available
+    fallback_valid_path = os.path.join(matching_base_path, 'condition_matching_valid.feather')
+    if os.path.exists(fallback_valid_path):
+        try:
+            condition_matching_valid = pd.read_feather(fallback_valid_path)
+            logger.log(f"Using fallback validation data: {len(condition_matching_valid)} samples")
+        except Exception as e2:
+            logger.log(f"Could not load fallback validation data: {e2}")
+            condition_matching_valid = None
+
+# Load training subsets for evaluation
+condition_matching_train_subset = None
+train_subset_path = os.path.join(matching_base_path, 'condition_matching_train_subset.feather')
+if os.path.exists(train_subset_path):
+    try:
+        condition_matching_train_subset = pd.read_feather(train_subset_path)
+        logger.log(f"Loaded training subset for evaluation: {len(condition_matching_train_subset)} samples")
+    except Exception as e:
+        logger.log(f"Could not load training subset: {e}")
+
 condition_relation_train_subset = None
 rel_subset_path = os.path.join(relation_base_path, 'condition_relation_train_subset.feather')
 if use_relation and relation_available and os.path.exists(rel_subset_path):
-    condition_relation_train_subset = pd.read_feather(rel_subset_path)
+    try:
+        condition_relation_train_subset = pd.read_feather(rel_subset_path)
+        logger.log(f"Loaded relation subset for evaluation: {len(condition_relation_train_subset)} samples")
+    except Exception as e:
+        logger.log(f"Could not load relation subset: {e}")
 
 
 #################################
@@ -230,8 +302,20 @@ max_saves = 4
 loss_func = losses.ContrastiveLoss(model=model)
 optimizer = AdamW(model.parameters(), lr=learning_rate)
 
-device_type = "cuda" if torch.cuda.is_available() else "cpu"
-device = torch.device(device_type)
+# Device detection with MPS support for Mac
+if torch.cuda.is_available():
+    device_type = "cuda"
+    device = torch.device("cuda")
+    print("Using CUDA GPU acceleration")
+elif torch.backends.mps.is_available():
+    device_type = "mps"
+    device = torch.device("mps")
+    print("Using MPS GPU acceleration (Mac)")
+else:
+    device_type = "cpu"
+    device = torch.device("cpu")
+    print("Using CPU")
+
 model = model.to(device)
 loss_func = loss_func.to(device)
 print(f"Using device: {device}")
@@ -260,14 +344,23 @@ scheduler = get_linear_schedule_with_warmup(
     num_training_steps=max(1, total_steps - start_global_step),
 )
 
-scaler = GradScaler(device=device_type, enabled=fp16)
+# GradScaler setup - MPS doesn't support GradScaler yet, so disable for MPS
+if device_type == "mps":
+    scaler = GradScaler(enabled=False)  # Disable mixed precision for MPS
+    fp16 = False  # Force disable fp16 for MPS
+    print("Note: Mixed precision disabled for MPS compatibility")
+else:
+    scaler = GradScaler(device=device_type, enabled=fp16)
 
 global_step = start_global_step
 best_eval_accuracy = float('-inf')
 
 wandb_report_steps = 256
 temp_dir = tempfile.gettempdir()
-wandb.init(project="Concept_Mapping", name=output_dir, dir=temp_dir)
+if not args.no_wandb:
+    wandb.init(project="Concept_Mapping", name=output_dir, dir=temp_dir)
+else:
+    print("W&B logging disabled")
 
 progress_bar = tqdm(total=len(block_tokenizer) * epoch_num)
 progress_bar.update(start_global_step)
@@ -319,7 +412,7 @@ for epoch_i in range(start_epoch, epoch_num):
         progress_bar.set_postfix(info)
         progress_bar.update(1)
 
-        if global_step % wandb_report_steps == 0:
+        if global_step % wandb_report_steps == 0 and not args.no_wandb:
             wandb.log(info, step=global_step)
 
         if global_step % arg_saving_steps == 0:
@@ -329,28 +422,47 @@ for epoch_i in range(start_epoch, epoch_num):
         if global_step % arg_eval_steps == 0:
             model.eval()
             with torch.no_grad():
-                eval_results = evaluate_embedding_similarity_with_mrr(model, condition_matching_valid)
-                eval_results = {f"eval/{k}": v for k, v in eval_results.items()}
+                eval_results = {}
+                if condition_matching_valid is not None:
+                    try:
+                        # Set single thread for evaluation to avoid tokenizer conflicts
+                        import os
+                        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+                        eval_metrics = evaluate_embedding_similarity_with_mrr(model, condition_matching_valid)
+                        eval_results = {f"eval/{k}": v for k, v in eval_metrics.items()}
+                    except Exception as e:
+                        logger.log(f"Evaluation failed: {e}")
+                        eval_results["eval/MRR"] = 0.0  # Default value for best model tracking
 
-                train_matching_results = evaluate_embedding_similarity_with_mrr(model, condition_matching_train_subset)
-                train_matching_results = {f"train_matching/{k}": v for k, v in train_matching_results.items()}
-                eval_results.update(train_matching_results)
+                if condition_matching_train_subset is not None:
+                    try:
+                        train_matching_results = evaluate_embedding_similarity_with_mrr(model, condition_matching_train_subset)
+                        train_matching_results = {f"train_matching/{k}": v for k, v in train_matching_results.items()}
+                        eval_results.update(train_matching_results)
+                    except Exception as e:
+                        logger.log(f"Train matching evaluation failed: {e}")
 
                 if use_relation and condition_relation_train_subset is not None:
-                    train_relation_results = evaluate_embedding_similarity_with_mrr(model, condition_relation_train_subset)
-                    train_relation_results = {f"train_relation/{k}": v for k, v in train_relation_results.items()}
-                    eval_results.update(train_relation_results)
+                    try:
+                        train_relation_results = evaluate_embedding_similarity_with_mrr(model, condition_relation_train_subset)
+                        train_relation_results = {f"train_relation/{k}": v for k, v in train_relation_results.items()}
+                        eval_results.update(train_relation_results)
+                    except Exception as e:
+                        logger.log(f"Train relation evaluation failed: {e}")
 
-                wandb.log(eval_results, step=global_step)
+                if not args.no_wandb:
+                    wandb.log(eval_results, step=global_step)
             print(f"Evaluation results: {eval_results}")
 
-            eval_accuracy = eval_results["eval/MRR"]
+            eval_accuracy = eval_results.get("eval/MRR", 0.0)
             if eval_accuracy > best_eval_accuracy:
                 print(f"New best model found! accuracy improved from {best_eval_accuracy:.4f} to {eval_accuracy:.4f}. Saving...")
                 best_eval_accuracy = eval_accuracy
                 save_best_model(model, tokenizer, output_dir, train_config=cur_train_config)
-                wandb.log({"eval/best_accuracy": best_eval_accuracy}, step=global_step)
+                if not args.no_wandb:
+                    wandb.log({"eval/best_accuracy": best_eval_accuracy}, step=global_step)
 
 progress_bar.close()
-wandb.finish()
+if not args.no_wandb:
+    wandb.finish()
 logger.done()

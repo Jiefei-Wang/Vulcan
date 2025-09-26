@@ -20,11 +20,11 @@ def _expand_negatives_to_pairs(mined: Dataset) -> pd.DataFrame:
         # No negatives mined; return empty
         return pd.DataFrame(columns=["sentence1", "sentence2", "label"])
     # Melt negatives into rows
-    long = df.melt(id_vars=["anchor", "positive"], value_vars=neg_cols, var_name="neg_col", value_name="negative")
-    long = long.dropna(subset=["negative"])  # drop missing
+    long = df.melt(id_vars=["anchor", "positive"], value_vars=neg_cols, var_name="neg_col", value_name="mined_negative")
+    long = long.dropna(subset=["mined_negative"])  # drop missing
     # Map to training pair schema
     out = pd.DataFrame({
-        "sentence1": long["negative"],  # corpus negative text
+        "sentence1": long["mined_negative"],  # corpus negative text
         "sentence2": long["anchor"],    # query text
         "label": 0,
     })
