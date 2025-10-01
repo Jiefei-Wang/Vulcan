@@ -1,3 +1,4 @@
+
 import duckdb
 from modules.FaissDB import build_index, search_similar, is_initialized
 import pandas as pd
@@ -78,6 +79,7 @@ def getFalsePositives(model,
         ON fp.query_id = blacklist_df.query_id
         AND fp.corpus_id = blacklist_df.corpus_id
         """).df()
+        print(f"Debug: fp after blacklist: {len(fp)} rows")
     
     fp['label'] = 0
     fp = fp[['query_id', 'query_name', 'corpus_id', 'corpus_name', 'score', 'label']]

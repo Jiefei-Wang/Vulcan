@@ -179,3 +179,10 @@ scripts/test.py
 .vscode/launch.json
 .vscode/settings.json
 report/JSM/*
+
+vulcan_env/*
+verify_dataset/*
+check_correctness_dataset/*.xlsx
+check_correctness_dataset/*.csv
+check_correctness_dataset/*.txt
+check_correctness_dataset/*.feather

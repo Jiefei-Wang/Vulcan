@@ -133,62 +133,93 @@ def save_best_model(model, tokenizer, save_folder, train_config = {}):
 
 
 
-def auto_load_model(save_folder):
+def auto_load_model(model_path_or_name):
     """
-    Automatically loads the latest saved model and tokenizer from the specified folder.
+    Automatically loads a model and tokenizer from either a local path or HuggingFace model name.
+
+    For local paths:
+    - If the path exists and contains auto_save_ models, loads the latest auto-saved model
+    - If the path exists but has no auto_save_ models, loads directly as a SentenceTransformer model
+
+    For HuggingFace model names:
+    - Loads the model directly from HuggingFace Hub
 
     Args:
-        save_folder (str): The path to the folder where models are saved.
+        model_path_or_name (str): Either a local path to saved models or a HuggingFace model name.
 
     Returns:
-        tuple: A tuple containing the loaded model and tokenizer, or (None, None) if no model is found or loading fails.
+        tuple: A tuple containing (model, tokenizer, train_config).
+               Returns (None, None, None) if loading fails.
     """
 
-    if not os.path.exists(save_folder):
-        print(f"Save folder does not exist: {save_folder}")
-        return None, None
+    if os.path.exists(model_path_or_name):
+        saved_models = [f for f in os.listdir(model_path_or_name) if f.startswith("auto_save_")]
 
-    saved_models = [f for f in os.listdir(save_folder) if f.startswith("auto_save_")]
+        if saved_models:
+            # Extract indices and sort by index to find the latest model.
+            models_with_indices = []
+            for filename in saved_models:
+                match = re.match(r"auto_save_(\d+)_", filename)
+                if match:
+                    try:
+                        index = int(match.group(1))
+                        models_with_indices.append((index, filename))
+                    except ValueError:
+                        print(f"Warning: Could not parse index from filename: {filename}")
 
-    if not saved_models:
-        print("No auto-saved models found in the specified folder.")
-        return None, None
+            if not models_with_indices:
+                return None, None, None
 
-    # Extract indices and sort by index to find the latest model.
-    models_with_indices = []
-    for filename in saved_models:
-        match = re.match(r"auto_save_(\d+)_", filename)
-        if match:
+            # Find the model with the largest index (latest model).
+            latest_index = max(index for index, filename in models_with_indices)
+            latest_model_filename = next(filename for index, filename in models_with_indices if index == latest_index)
+            latest_model_path = os.path.join(model_path_or_name, latest_model_filename)
+
             try:
-                index = int(match.group(1))
-                models_with_indices.append((index, filename))
-            except ValueError:
-                print(f"Warning: Could not parse index from filename: {filename}")
-
-    if not models_with_indices:
-        print("No auto-saved models with valid index found in the specified folder.")
-        return None, None
-
-    # Find the model with the largest index (latest model).
-    latest_index = max(index for index, filename in models_with_indices)
-    latest_model_filename = next(filename for index, filename in models_with_indices if index == latest_index)
-    latest_model_path = os.path.join(save_folder, latest_model_filename)
-
-    try:
-        # Load the model and tokenizer
-        model = SentenceTransformer(latest_model_path)  # Load the model
-        tokenizer = AutoTokenizer.from_pretrained(latest_model_path)  # Load tokenizer
-        train_config_path = os.path.join(latest_model_path, 'train_config.json')
-        if os.path.exists(train_config_path):
-            with open(train_config_path, 'r') as f:
-                train_config = json.load(f)
+                # Load the model and tokenizer
+                model = SentenceTransformer(latest_model_path)
+                tokenizer = AutoTokenizer.from_pretrained(latest_model_path)
+                train_config_path = os.path.join(latest_model_path, 'train_config.json')
+                if os.path.exists(train_config_path):
+                    with open(train_config_path, 'r') as f:
+                        train_config = json.load(f)
+                else:
+                    train_config = {}
+                print(f"Loaded latest auto-saved model from: {latest_model_path}")
+                return model, tokenizer, train_config
+            except Exception as e:
+                print(f"Error loading auto-saved model from {latest_model_path}: {e}")
+                return None, None, None
         else:
-            train_config = {}
-        print(f"Loaded latest model and tokenizer from: {latest_model_path}")
-        return model, tokenizer, train_config
-    except Exception as e:
-        print(f"Error loading model or tokenizer from {latest_model_path}: {e}")
-        return None, None, None
+            try:
+                print("No auto-saved models found, loading as direct SentenceTransformer model...")
+                model = SentenceTransformer(model_path_or_name)
+                tokenizer = model.tokenizer
+
+                train_config_path = os.path.join(model_path_or_name, 'train_config.json')
+                if os.path.exists(train_config_path):
+                    with open(train_config_path, 'r') as f:
+                        train_config = json.load(f)
+                else:
+                    train_config = {}
+
+                print(f"Loaded SentenceTransformer model from: {model_path_or_name}")
+                return model, tokenizer, train_config
+            except Exception as e:
+                print(f"Error loading SentenceTransformer model from {model_path_or_name}: {e}")
+                return None, None, None
+    else:
+        # a HuggingFace model name
+        try:
+            print(f"Loading HuggingFace model: {model_path_or_name}")
+            model = SentenceTransformer(model_path_or_name)
+            tokenizer = model.tokenizer
+            train_config = {}  # No train config for HuggingFace models
+            print(f"Successfully loaded HuggingFace model: {model_path_or_name}")
+            return model, tokenizer, train_config
+        except Exception as e:
+            print(f"Error loading HuggingFace model {model_path_or_name}: {e}")
+            return None, None, None
 
 
 def get_loss(loss_func, block_tokenizer, idx):
@@ -203,7 +234,6 @@ def get_loss(loss_func, block_tokenizer, idx):
     # Forward pass
     loss_value = loss_func(sentence_pairs, labels_tensor)
     return loss_value
-
 
 
 

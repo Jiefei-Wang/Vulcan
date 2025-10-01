@@ -76,18 +76,20 @@ def evaluate_performance(query_ids, similarities, labels, threshold=0.8):
         sorted_group = group.sort_values('similarity', ascending=False).reset_index(drop=True)
         positive_indices = sorted_group.index[sorted_group['label'] == 1].tolist()
         if positive_indices:
+            # Best: first positive (highest ranked positive)
             best = index_to_metric(positive_indices[0])
+            # Worst: last positive (lowest ranked positive)
             worst = index_to_metric(positive_indices[-1])
         else:
+            # No positives found
             best = worst = index_to_metric(None)
-            
+
         best = {f'best_{k}': v for k, v in best.items()}
         worst = {f'worst_{k}': v for k, v in worst.items()}
         index_based_metrics.append(best | worst)
             
-    # to data.frame
+    # to data.frame and compute means
     index_based_metrics = pd.DataFrame(index_based_metrics)
-    index_based_metrics[['best_reciprocal_rank', 'worst_reciprocal_rank']] 
     # column means
     index_based_metrics = index_based_metrics.mean().to_dict()
     
