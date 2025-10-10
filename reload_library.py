@@ -10,6 +10,8 @@ importlib.reload(modules.CodeBlockExecutor)
 import modules.FalsePositives
 importlib.reload(modules.FalsePositives)
 
+import modules.ModelFunctions
+importlib.reload(modules.ModelFunctions)
 
 import modules.Dataset
 importlib.reload(modules.Dataset)

@@ -21,7 +21,8 @@ from modules.BlockTokenizer import BlockTokenizer
 from modules.timed_logger import logger
 from modules.Dataset import PositiveDataset, NegativeDataset, CombinedDataset
 from modules.metrics import evaluate_embedding_similarity_with_mrr
-from modules.STHardNegMiner import mine_negatives
+from modules.STHardNegMiner import mine_negatives, _pairs_to_dataset
+from sentence_transformers.util import mine_hard_negatives
 
 logger.reset_timer()
 
@@ -31,10 +32,10 @@ parser = argparse.ArgumentParser(description="Train with positive-aware hard neg
 parser.add_argument("--no-relation", action="store_true", help="Disable relation data even if files exist or config says True")
 parser.add_argument("--range-min", type=int, default=10, help="Minimum rank for candidate negatives")
 parser.add_argument("--range-max", type=int, default=50, help="Maximum rank for candidate negatives")
-parser.add_argument("--margin", type=float, default=0.05, help="Absolute margin for mining")
+parser.add_argument("--relative_margin", type=float, default=0.05, help="Relative margin for mining")
 parser.add_argument("--num-neg-matching", type=int, default=None, help="Negatives per anchor for matching mining (override)")
 parser.add_argument("--num-neg-relation", type=int, default=None, help="Negatives per anchor for relation mining (override)")
-parser.add_argument("--sampling-strategy", type=str, choices=["random","top"], default="random", help="Negative sampling strategy from candidates")
+parser.add_argument("--sampling-strategy", type=str, choices=["random","top"], default="top", help="Negative sampling strategy from candidates")
 parser.add_argument("--mine-batch-size", type=int, default=256, help="Batch size for miner embedding")
 parser.add_argument("--no-faiss", action="store_true", help="Disable FAISS acceleration in miner")
 parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
@@ -48,7 +49,7 @@ args = parser.parse_args()
 # --- Initialization ---
 logger.log("Loading Model (pos-aware training)")
 output_dir = f"output/finetune_posaware/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-base_model = 'sentence-transformers/all-MiniLM-L6-v2'
+base_model = 'all-MiniLM-L6-v2'
 
 # Load model - use Hugging Face model directly or specified checkpoint
 if args.model_checkpoint and args.model_checkpoint != "none":
@@ -98,11 +99,7 @@ if args.num_neg_matching is not None:
 if use_relation and args.num_neg_relation is not None:
     n_fp_relation = args.num_neg_relation
 
-target_concepts_path = os.path.join(matching_base_path, 'std_condition_concept.feather')
-if not os.path.exists(target_concepts_path):
-    # Fallback for older naming (if present)
-    alt_path = os.path.join(matching_base_path, 'target_concepts.feather')
-    target_concepts_path = alt_path if os.path.exists(alt_path) else target_concepts_path
+target_concepts_path = os.path.join(matching_base_path, 'target_concepts.feather')
 target_concepts = pd.read_feather(target_concepts_path)
 matching_name_bridge = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_name_bridge_train.feather'))
 matching_name_table = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_name_table_train.feather'))
@@ -119,13 +116,6 @@ matching_pos = PositiveDataset(
     seed=seed
 )
 
-matching_neg = NegativeDataset(
-    target_concepts=target_concepts,
-    name_table=matching_name_table,
-    blacklist_bridge=matching_name_bridge,
-    max_elements=n_neg_matching,
-    seed=seed
-)
 
 # Build anchor/positive pairs for matching and mine negatives with ST builtin
 anchor_positive_match = matching_name_bridge
@@ -137,17 +127,21 @@ anchor_positive_match = anchor_positive_match.merge(
     on='concept_id'
 )[['anchor','positive']].drop_duplicates()
 
+
+matching_pos_ds = _pairs_to_dataset(anchor_positive_match)
+
 # Limit training samples if specified
 if args.max_training_samples is not None:
     logger.log(f"Limiting training data to {args.max_training_samples} samples")
     anchor_positive_match = anchor_positive_match.sample(n=min(args.max_training_samples, len(anchor_positive_match)), random_state=seed).reset_index(drop=True)
 
-matching_fp_df = mine_negatives(
-    anchor_positive_pairs=anchor_positive_match,
+
+matching_fp_df = mine_hard_negatives(
+    dataset=matching_pos_ds,
     model=model,
     range_min=args.range_min,
     range_max=args.range_max,
-    margin=args.margin,
+    relative_margin=args.relative_margin,
     num_negatives=n_fp_matching,
     sampling_strategy=args.sampling_strategy,
     batch_size=args.mine_batch_size,
@@ -174,34 +168,27 @@ if use_relation and relation_available:
         seed=seed
     )
 
-    relation_neg = RelNegativeDataset(
-        target_concepts=target_concepts,
-        name_table=name_table_relation,
-        blacklist_bridge=name_bridge_relation,
-        max_elements=n_neg_relation,
-        seed=seed
-    )
-
     anchor_positive_rel = name_bridge_relation
     anchor_positive_rel = anchor_positive_rel.merge(
-        name_table_relation[['name_id','name']].rename(columns={'name':'anchor'}),
+        name_table_relation[['name_id','name']].rename(columns={'name':'positive'}),
         on='name_id'
     ).merge(
-        target_concepts[['concept_id','concept_name']].rename(columns={'concept_name':'positive'}),
+        target_concepts[['concept_id','concept_name']].rename(columns={'concept_name':'anchor'}),
         on='concept_id'
     )[['anchor','positive']].drop_duplicates()
 
+    relation_pos_ds = _pairs_to_dataset(anchor_positive_rel)
     # Limit relation training samples if specified
     if args.max_training_samples is not None:
         relation_samples = min(args.max_training_samples // 2, len(anchor_positive_rel))  # Split between matching and relation
         anchor_positive_rel = anchor_positive_rel.sample(n=relation_samples, random_state=seed).reset_index(drop=True)
 
-    relation_fp_df = mine_negatives(
-        anchor_positive_pairs=anchor_positive_rel,
+    relation_fp_df = mine_hard_negatives(
+        dataset=relation_pos_ds,
         model=model,
         range_min=args.range_min,
         range_max=args.range_max,
-        margin=args.margin,
+        relative_margin=args.relative_margin,
         num_negatives=n_fp_relation,
         sampling_strategy=args.sampling_strategy,
         batch_size=args.mine_batch_size,
@@ -209,98 +196,23 @@ if use_relation and relation_available:
         verbose=True,
     )
 
+from datasets import concatenate_datasets
+
 if use_relation and relation_available:
-    ds_all = CombinedDataset(
-        matching_pos=matching_pos,
-        matching_neg=matching_neg,
-        matching_fp=matching_fp_df,   # pandas DataFrame accepted
-        relation_pos=relation_pos,
-        relation_fp=relation_fp_df,   # pandas DataFrame accepted
-        relation_neg=relation_neg,
-    )
+    ds_all = concatenate_datasets([matching_fp_df, relation_fp_df])
 else:
-    ds_all = CombinedDataset(
-        matching_pos=matching_pos,
-        matching_neg=matching_neg,
-        matching_fp=matching_fp_df,   # pandas DataFrame accepted
-    )
+    ds_all = matching_fp_df
 
 
 #################################
 # Validation data (OMOP CIEL)
 #################################
 logger.log("Loading validation data")
-condition_matching_valid = None
+condition_matching_valid = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_valid.feather'))
 
-# Try to load OMOP CIEL validation data first
-try:
-    from modules.ChromaVecDB import ChromaVecDB
+condition_matching_train_subset = pd.read_feather(os.path.join(matching_base_path, 'condition_matching_train_subset.feather'))
 
-    logger.log("Attempting to load OMOP CIEL validation data")
-    conceptEX = pd.read_feather('data/omop_feather/conceptEX.feather')
-    conditions = conceptEX[conceptEX['domain_id'] == 'Condition']
-    std_conditions = conditions[conditions['standard_concept'] == 'S']
-    nonstd_conditions = conditions[conditions['standard_concept'] != 'S']
-
-    # Database: standard conditions
-    database = std_conditions[['concept_id', 'concept_name']]
-
-    # Query: CIEL concepts
-    ciel_query_df = nonstd_conditions[
-        ['concept_id', 'concept_name', 'std_concept_id']
-    ][nonstd_conditions['vocabulary_id'] == 'CIEL']
-
-    # Store CIEL validation data for later evaluation use
-    global ciel_validation_data
-    ciel_validation_data = {
-        'database': database,
-        'query_df': ciel_query_df
-    }
-
-    # Create a simple validation dataset for backward compatibility with existing evaluation code
-    # This maintains the same format for the training loop evaluation
-    y_true = ciel_query_df['std_concept_id'].str[0].astype(int)
-    std_concept_names = std_conditions[['concept_id', 'concept_name']].rename(
-        columns={'concept_id': 'std_concept_id', 'concept_name': 'std_concept_name'}
-    )
-    ciel_validation = ciel_query_df.merge(std_concept_names, left_on=y_true, right_on='std_concept_id', how='inner')
-
-    condition_matching_valid = ciel_validation[['concept_name', 'std_concept_name']].rename(
-        columns={'concept_name': 'query', 'std_concept_name': 'target'}
-    )
-    logger.log(f"Loaded OMOP CIEL validation data: {len(condition_matching_valid)} samples")
-except Exception as e:
-    logger.log(f"Could not load OMOP CIEL validation data: {e}")
-    ciel_validation_data = None
-    # Fallback to original validation file if available
-    fallback_valid_path = os.path.join(matching_base_path, 'condition_matching_valid.feather')
-    if os.path.exists(fallback_valid_path):
-        try:
-            condition_matching_valid = pd.read_feather(fallback_valid_path)
-            logger.log(f"Using fallback validation data: {len(condition_matching_valid)} samples")
-        except Exception as e2:
-            logger.log(f"Could not load fallback validation data: {e2}")
-            condition_matching_valid = None
-
-# Load training subsets for evaluation
-condition_matching_train_subset = None
-train_subset_path = os.path.join(matching_base_path, 'condition_matching_train_subset.feather')
-if os.path.exists(train_subset_path):
-    try:
-        condition_matching_train_subset = pd.read_feather(train_subset_path)
-        logger.log(f"Loaded training subset for evaluation: {len(condition_matching_train_subset)} samples")
-    except Exception as e:
-        logger.log(f"Could not load training subset: {e}")
-
-condition_relation_train_subset = None
-rel_subset_path = os.path.join(relation_base_path, 'condition_relation_train_subset.feather')
-if use_relation and relation_available and os.path.exists(rel_subset_path):
-    try:
-        condition_relation_train_subset = pd.read_feather(rel_subset_path)
-        logger.log(f"Loaded relation subset for evaluation: {len(condition_relation_train_subset)} samples")
-    except Exception as e:
-        logger.log(f"Could not load relation subset: {e}")
-
+condition_relation_train_subset = pd.read_feather(os.path.join(relation_base_path, 'condition_relation_train_subset.feather'))
 
 #################################
 # Model settings
@@ -427,32 +339,19 @@ for epoch_i in range(start_epoch, epoch_num):
             model.eval()
             with torch.no_grad():
                 eval_results = {}
-                if condition_matching_valid is not None:
-                    try:
-                        # Set single thread for evaluation to avoid tokenizer conflicts
-                        import os
-                        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-                        eval_metrics = evaluate_embedding_similarity_with_mrr(model, condition_matching_valid)
-                        eval_results = {f"eval/{k}": v for k, v in eval_metrics.items()}
-                    except Exception as e:
-                        logger.log(f"Evaluation failed: {e}")
-                        eval_results["eval/MRR"] = 0.0  # Default value for best model tracking
+                ## hard validation data
+                eval_metrics = evaluate_embedding_similarity_with_mrr(model, condition_matching_valid)
+                eval_results = {f"eval/{k}": v for k, v in eval_metrics.items()}
+                
+                ## training subsets 
+                train_matching_results = evaluate_embedding_similarity_with_mrr(model, condition_matching_train_subset)
+                train_matching_results = {f"train_matching/{k}": v for k, v in train_matching_results.items()}
+                eval_results.update(train_matching_results)
 
-                if condition_matching_train_subset is not None:
-                    try:
-                        train_matching_results = evaluate_embedding_similarity_with_mrr(model, condition_matching_train_subset)
-                        train_matching_results = {f"train_matching/{k}": v for k, v in train_matching_results.items()}
-                        eval_results.update(train_matching_results)
-                    except Exception as e:
-                        logger.log(f"Train matching evaluation failed: {e}")
-
-                if use_relation and condition_relation_train_subset is not None:
-                    try:
-                        train_relation_results = evaluate_embedding_similarity_with_mrr(model, condition_relation_train_subset)
-                        train_relation_results = {f"train_relation/{k}": v for k, v in train_relation_results.items()}
-                        eval_results.update(train_relation_results)
-                    except Exception as e:
-                        logger.log(f"Train relation evaluation failed: {e}")
+                # training relation subset
+                train_relation_results = evaluate_embedding_similarity_with_mrr(model, condition_relation_train_subset)
+                train_relation_results = {f"train_relation/{k}": v for k, v in train_relation_results.items()}
+                eval_results.update(train_relation_results)
 
                 if not args.no_wandb:
                     wandb.log(eval_results, step=global_step)
@@ -468,66 +367,7 @@ for epoch_i in range(start_epoch, epoch_num):
 
 progress_bar.close()
 
-# Final CIEL evaluation using ChromaVecDB approach (like poster.py)
-if 'ciel_validation_data' in globals() and ciel_validation_data is not None:
-    try:
-        logger.log("Performing final CIEL evaluation with ChromaVecDB")
-
-        database = ciel_validation_data['database']
-        query_df = ciel_validation_data['query_df']
-
-        # Create vector database and query
-        db = ChromaVecDB(model=model, name='final_ciel_eval', path=None)
-        db.empty_collection()
-        db.store_concepts(database, batch_size=5461)
-
-        max_k = 50
-        res = db.query(query_df[['concept_name']], n_results=max_k)
-
-        y_true = query_df['std_concept_id'].str[0].astype(int).tolist()
-        pred_lists = res['ids']
-
-        # Calculate comprehensive metrics
-        k_list = [1, 10, 50]
-        final_ciel_metrics = {}
-
-        for k in k_list:
-            hits = [1 if (y_true[i] in pred_lists[i][:k]) else 0 for i in range(len(y_true))]
-            acc_k = sum(hits) / len(hits)
-            final_ciel_metrics[f'Final_Accuracy@{k}'] = acc_k
-
-        # Calculate MRR
-        reciprocal_ranks = []
-        for true_id, preds in zip(y_true, pred_lists):
-            try:
-                rank = preds.index(true_id) + 1
-                reciprocal_ranks.append(1.0 / rank)
-            except ValueError:
-                reciprocal_ranks.append(0.0)
-
-        mrr = sum(reciprocal_ranks) / len(reciprocal_ranks)
-        final_ciel_metrics['Final_MRR'] = mrr
-
-        print("\n=== Final CIEL Evaluation Results ===")
-        print(f"Final MRR: {mrr:.4f}")
-        print(f"Final Accuracy@1: {final_ciel_metrics['Final_Accuracy@1']:.4f}")
-        print(f"Final Accuracy@10: {final_ciel_metrics['Final_Accuracy@10']:.4f}")
-        print(f"Final Accuracy@50: {final_ciel_metrics['Final_Accuracy@50']:.4f}")
-
-        if not args.no_wandb:
-            wandb.log(final_ciel_metrics)
-
-        # Save final metrics to file
-        try:
-            import json
-            with open(os.path.join(output_dir, 'final_ciel_metrics.json'), 'w') as f:
-                json.dump(final_ciel_metrics, f, indent=2)
-        except Exception as e:
-            logger.log(f"Warning: Could not save final CIEL metrics: {e}")
-
-    except Exception as e:
-        logger.log(f"Final CIEL evaluation failed: {e}")
-
 if not args.no_wandb:
     wandb.finish()
+    
 logger.done()

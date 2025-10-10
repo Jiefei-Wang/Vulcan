@@ -13,7 +13,7 @@ from tqdm import tqdm
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 
-from modules.ModelFunctions import auto_save_model, save_best_model, get_loss, get_base_model, get_ST_model, auto_load_model, encode_concepts
+from modules.ModelFunctions import save_init_model, save_best_model, get_loss, get_base_model, get_ST_model, auto_load_model, encode_concepts
 from modules.timed_logger import logger
 from modules.Dataset import PositiveDataset, NegativeDataset, FalsePositiveDataset, CombinedDataset
 from modules.metrics import evaluate_performance

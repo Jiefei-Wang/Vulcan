@@ -3,6 +3,7 @@ import pandas as pd
 import duckdb
 from tqdm import tqdm
 import numpy as np
+from modules.ModelFunctions import encode_concepts
 
 GLOBAL_SPACE = {
 }
@@ -50,10 +51,7 @@ def build_index(model, corpus_ids, corpus_names, corpus_embeddings=None, repos='
         corpus_embeddings = model.encode(concept_names, normalize_embeddings=True)
 
     # if corpus_embeddings is a pandas DataFrame, convert to numpy array
-    if isinstance(corpus_embeddings, pd.Series):
-        corpus_embeddings = np.array(corpus_embeddings.tolist())
-    elif isinstance(corpus_embeddings, list):
-        corpus_embeddings = np.array(corpus_embeddings)
+    corpus_embeddings = np.array(list(corpus_embeddings))
     
     # Your existing code
     dimension = corpus_embeddings.shape[1]
@@ -92,11 +90,13 @@ def search_similar(query_ids, query_names, query_embeddings=None, top_k=5, repos
     if not is_initialized(repos):
         raise ValueError("Index not built. Call build_index() first.")
 
+    query_ids = list(query_ids)
+    query_names = list(query_names)
     model = GLOBAL_SPACE[repos]['model']
     faiss_index = GLOBAL_SPACE[repos]['faiss_index']
 
     if query_embeddings is None:
-        query_embeddings = model.encode(query_names, normalize_embeddings=True)
+        query_embeddings = encode_concepts(model, query_names)
     
     embeddings = query_embeddings.astype('float16')
     # faiss_index.nprobe = nprobe 
@@ -125,7 +125,6 @@ def search_similar(query_ids, query_names, query_embeddings=None, top_k=5, repos
         SELECT query_id, query_name, corpus_id, corpus_name, score
         FROM search_results
         JOIN corpus_df ON search_results.top_k_indices = corpus_df.index
-        where REPLACE(LOWER(query_name), ' ', '') != REPLACE(LOWER(corpus_name), ' ', '')
     """).df()
     
     return search_results
