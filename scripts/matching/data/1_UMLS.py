@@ -8,7 +8,7 @@ from tqdm import tqdm
 import pandas as pd
 from modules.timed_logger import logger
 import duckdb
-from modules.CodeBlockExecutor import trace
+from modules.CodeBlockExecutor import tracedf
 logger.reset_timer()
 
 logger.log("Getting UMLS definitions")
@@ -122,7 +122,10 @@ map_table_umls = pd.concat([map_table_umls_str, map_table_umls_def], ignore_inde
     
 
 map_table_umls.to_feather('data/matching/map_table_umls.feather')
-trace(map_table_umls.shape)
-#> (4985537, 5)
+tracedf(map_table_umls)
+#> DataFrame dimensions: 4985537 rows × 5 columns
+#> Column names:
+#> ['concept_id', 'source', 'source_id', 'type', 'name']
+#> Estimated memory usage: 1.51 GB
 
 logger.done()

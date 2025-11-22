@@ -1,8 +1,6 @@
 # This script 
 #   - convert the OMOP concept from csv to feather format
-#   - conceptEX: add a column 'std_concept_id_list'
-#       - keeps all concepts, setting std_concept_id_list to [] for unmapped
-#   - Create a conceptEX table that contains std_concept_id_list column
+#   - Create std_bridge mapping table from non-standard to standard concepts
 #   - convert the UMLS concept from csv to feather format
 import pandas as pd
 import numpy as np

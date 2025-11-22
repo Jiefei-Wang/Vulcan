@@ -23,7 +23,9 @@ with open('scripts/matching/1_extract.py') as f:
 
 execute_and_embed('scripts/matching/2_combined.py')
 
-execute_and_embed('scripts/matching/3_train_valid_split.py')
+execute_and_embed('scripts/matching/3_condition_domain.py')
+
+execute_and_embed('scripts/matching/4_train_test_valid.py')
 
 execute_and_embed('scripts/matching/4_false_positive.py')
 

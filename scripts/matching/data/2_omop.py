@@ -8,7 +8,7 @@ from tqdm import tqdm
 import pandas as pd
 from modules.timed_logger import logger
 import duckdb
-from modules.CodeBlockExecutor import trace
+from modules.CodeBlockExecutor import tracedf
 
 logger.reset_timer()
 logger.log("Loading OMOP CDM concept tables")
@@ -66,8 +66,11 @@ map_table_OMOP_synonyms['source'] = "OMOP"
 map_table_OMOP_synonyms['type'] = 'synonym'
 map_table_OMOP_synonyms = map_table_OMOP_synonyms[['concept_id', 'source', 'source_id', 'type', 'name']]
 
-trace(map_table_OMOP_synonyms.shape)
-#> (4134188, 5)
+tracedf(map_table_OMOP_synonyms)
+#> DataFrame dimensions: 4134188 rows × 5 columns
+#> Column names:
+#> ['concept_id', 'source', 'source_id', 'type', 'name']
+#> Estimated memory usage: 964.03 MB
 
 map_table_OMOP = pd.concat(
     [map_table_OMOP_nonstd, map_table_OMOP_synonyms],
@@ -76,7 +79,10 @@ map_table_OMOP = pd.concat(
 
 
 map_table_OMOP.to_feather('data/matching/map_table_OMOP.feather')
-trace(map_table_OMOP.shape)
-#> (6384688, 5)
+tracedf(map_table_OMOP)
+#> DataFrame dimensions: 6384688 rows × 5 columns
+#> Column names:
+#> ['concept_id', 'source', 'source_id', 'type', 'name']
+#> Estimated memory usage: 1.45 GB
 
 logger.done()

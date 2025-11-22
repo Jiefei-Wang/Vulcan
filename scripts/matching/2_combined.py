@@ -31,11 +31,14 @@ combined_mapping_table = pd.concat(
 )
 combined_mapping_table['source_id'] = combined_mapping_table['source_id'].astype(str)
 
-trace(combined_mapping_table.shape)
-#> (11370225, 5)
+tracedf(combined_mapping_table)
+#> DataFrame dimensions: 11370225 rows × 5 columns
+#> Column names:
+#> ['concept_id', 'source', 'source_id', 'type', 'name']
+#> Estimated memory usage: 3.12 GB
 
-# - For each concept_id in combined_mapping_table, keep only the concepts that are in the standard bridge
-#   1. if the concept_id is standard, it is in the std_bridge
+# - For each concept_id in combined_mapping_table, map to a standard concept_id using std_bridge
+#   1. if the concept_id is standard, it will be mapped to itself in the std_bridge
 #   2. if the concept_id is non-standard, it will be mapped to a standard concept_id in the std_bridge
 #   3. For those that are not in the std_bridge, there is no way to map them 
 # to a standard concept, so we will not use them in the training.
@@ -50,15 +53,21 @@ matching_map_table = duckdb.query("""
     where name IS NOT NULL AND name != ''
 """).df()
 
-trace(matching_map_table.shape)
-#> (9007100, 6)
+tracedf(matching_map_table)
+#> DataFrame dimensions: 9007100 rows × 6 columns
+#> Column names:
+#> ['concept_id', 'source', 'source_id', 'type', 'name', 'name_stripped']
+#> Estimated memory usage: 3.34 GB
 
 
 ## remove non-english rows like: 인도신1mg주
 matching_map_table = matching_map_table[matching_map_table['name'].apply(lambda x: x.isascii())].reset_index(drop=True)
 
-trace(matching_map_table.shape)
-#> (8152148, 6)
+tracedf(matching_map_table)
+#> DataFrame dimensions: 8152148 rows × 6 columns
+#> Column names:
+#> ['concept_id', 'source', 'source_id', 'type', 'name', 'name_stripped']
+#> Estimated memory usage: 2.97 GB
 
 ## for each concept_id, remove the duplicates in name_stripped
 matching_map_table = duckdb.query("""
@@ -72,6 +81,11 @@ matching_map_table = duckdb.query("""
 """
 ).df()
 
+tracedf(matching_map_table)
+#> DataFrame dimensions: 5696264 rows × 7 columns
+#> Column names:
+#> ['concept_id', 'source', 'source_id', 'type', 'name', 'name_stripped', 'rn']
+#> Estimated memory usage: 2.11 GB
 
 # remove the mapping that maps to the concept name itself
 concept_id_to_name = concept[['concept_id', 'concept_name']]
@@ -88,16 +102,22 @@ matching_map_table = duckdb.query("""
 """).df()
 
 
-matching_map_table = matching_map_table[['concept_id', 'source', 'source_id', 'type', 'name']].reset_index(drop=True)
+
+
+# add id
+matching_map_table['name_id'] = range(1, len(matching_map_table) + 1)
+
+matching_map_table = matching_map_table[['concept_id', 'source', 'source_id', 'type', 'name_id', 'name']].reset_index(drop=True)
 
 matching_map_table.to_feather(os.path.join(output_dir, 'matching_map_table.feather'))
 
 
+
 tracedf(matching_map_table)
-#> DataFrame dimensions: 4826911 rows × 5 columns
+#> DataFrame dimensions: 4826911 rows × 6 columns
 #> Column names:
-#> ['concept_id', 'source', 'source_id', 'type', 'name']
-#> Estimated memory usage: 1.30 GB
+#> ['concept_id', 'source', 'source_id', 'type', 'name_id', 'name']
+#> Estimated memory usage: 1.34 GB
 
 
 
