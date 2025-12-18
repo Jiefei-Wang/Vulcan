@@ -64,6 +64,9 @@ def save_init_model(model, tokenizer, save_folder):
 
 def save_best_model(model, tokenizer, save_folder, train_config = {}):
     save_path = os.path.join(save_folder, "best_model")
+    if os.path.exists(save_path):
+        shutil.rmtree(save_path)
+    os.makedirs(save_path, exist_ok=True)
     model.save(save_path)  # Assuming model has a save method
     tokenizer.save_pretrained(save_path)  # Save tokenizer as well
     with open(os.path.join(save_path, 'train_config.json'), 'w') as f:
@@ -130,6 +133,16 @@ def auto_load_model(model_path_or_name):
         except Exception as e:
             print(f"Error loading auto-saved model from {target_model_path}: {e}")
             return None, None
+    else:
+        try:
+            # Load from HuggingFace model name
+            model = SentenceTransformer(model_path_or_name)
+            tokenizer = AutoTokenizer.from_pretrained(model_path_or_name)
+            print(f"Loaded model from HuggingFace model name: {model_path_or_name}")
+            return model, tokenizer
+        except Exception as e:
+            print(f"Error loading model from HuggingFace model name {model_path_or_name}: {e}")
+            return None, None
             
             
 
@@ -151,7 +164,7 @@ def get_loss(loss_func, block_tokenizer, idx):
 
 
 
-def get_ST_model(base_model = 'ClinicalBERT'):
+def get_ST_model(base_model, special_tokens):
     """
     Load a SentenceTransformer model or create a new one if it doesn't exist. The model will be saved and reused in the future.
     """
@@ -163,9 +176,9 @@ def get_ST_model(base_model = 'ClinicalBERT'):
     saved_path = f'models/{base_model}_ST_{token_combined}'
     if not os.path.exists(saved_path):
         model, tokenizer = get_base_model(base_model_path, special_tokens)
-        save_init_model(model, tokenizer, saved_path, max_saves=1) 
+        save_init_model(model, tokenizer, saved_path) 
     else:
-        model, tokenizer, _ = auto_load_model(saved_path)
+        model, tokenizer = auto_load_model(saved_path)
     return model, tokenizer
 
 

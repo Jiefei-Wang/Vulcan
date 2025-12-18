@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split
 from modules.CodeBlockExecutor import trace, tracedf
 
 logger.reset_timer()
-logger.log("Combining all map_tables")
+logger.log("loading data")
 
 output_dir = "data/matching"
 output_train_dir = os.path.join(output_dir, 'train')

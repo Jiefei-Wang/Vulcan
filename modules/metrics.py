@@ -3,6 +3,7 @@ import pandas as pd
 from sklearn.metrics import roc_auc_score, average_precision_score, f1_score, precision_score, recall_score
 from collections import defaultdict
 from modules.ModelFunctions import encode_concepts
+from modules.FaissDB import build_index, search_similar
 
 def evaluate_embedding_similarity_with_mrr(model, data, threshold=0.8):
     """
@@ -30,7 +31,37 @@ def evaluate_embedding_similarity_with_mrr(model, data, threshold=0.8):
     return metrics
 
 
+def evaluate_model(model_name, model, query_concepts, target_concepts, target_embedding, query_positive_mapping):
+    top_k = 100
+    model_emb = build_index(
+        model = model, 
+        corpus_ids = target_concepts.concept_id, 
+        corpus_names = target_concepts.concept_name, 
+        corpus_embeddings = target_embedding,
+        repos=model_name
+    )
 
+    model_top = search_similar(
+        query_ids = query_concepts.name_id, 
+        query_names = query_concepts.sentence2, 
+        top_k=top_k, 
+        repos=model_name
+        )
+
+    model_top = model_top.merge(
+        query_positive_mapping,
+        on=['query_id', 'corpus_id'],
+        how='left'
+    ) 
+    model_top['label'] = model_top['label'].fillna(0).astype(int)
+
+
+    model_eval = evaluate_performance(
+        query_ids=model_top['query_id'],
+        similarities=model_top['score'],
+        labels=model_top['label']
+    )
+    return model_top, model_eval
 
 
 def evaluate_performance(query_ids, similarities, labels, threshold=0.8):

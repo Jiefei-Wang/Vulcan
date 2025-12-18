@@ -40,7 +40,7 @@ from modules.CodeBlockExecutor import execute_and_embed
 execute_and_embed('scripts/relation/1_positive_relation.py')
 
 
-execute_and_embed('scripts/relation/2_false_positive.py')
+# execute_and_embed('scripts/relation/2_false_positive.py')
 
 
 ########################
