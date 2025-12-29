@@ -29,7 +29,7 @@ logger.log("Extract a mapping of standard concepts to non-standard names")
 name_map_OMOP_nonstd = std_bridge[std_bridge.concept_id!= std_bridge.std_concept_id]
 
 ## make sure two tables overlap with each other
-map_table_OMOP_nonstd = concept.merge(
+OMOP_nonstd_std_pairs = concept.merge(
     name_map_OMOP_nonstd,
     on = 'concept_id',
     how = 'inner'
@@ -42,12 +42,12 @@ map_table_OMOP_nonstd = concept.merge(
 )
 
 
-map_table_OMOP_nonstd['source'] = "OMOP"
-map_table_OMOP_nonstd['type'] = 'nonstd'
+OMOP_nonstd_std_pairs['source'] = "OMOP"
+OMOP_nonstd_std_pairs['type'] = 'nonstd'
 
-map_table_OMOP_nonstd = map_table_OMOP_nonstd[['concept_id', 'source', 'source_id', 'type', 'name']]
+OMOP_nonstd_std_pairs = OMOP_nonstd_std_pairs[['concept_id', 'source', 'source_id', 'type', 'name']]
 
-trace(map_table_OMOP_nonstd.shape)
+trace(OMOP_nonstd_std_pairs.shape)
 #> (3668243, 5)
 
 #######################################
@@ -55,31 +55,31 @@ trace(map_table_OMOP_nonstd.shape)
 #######################################
 logger.log("Get concept synonyms from OMOP")
 
-map_table_OMOP_synonyms = concept_synonym[['concept_id', 'concept_synonym_name']].rename(
+OMOP_synonyms_std_pairs = concept_synonym[['concept_id', 'concept_synonym_name']].rename(
     columns={
         'concept_synonym_name': 'name'
     }).drop_duplicates().reset_index(drop=True)
 
 
-map_table_OMOP_synonyms['source_id'] = map_table_OMOP_synonyms['concept_id']
-map_table_OMOP_synonyms['source'] = "OMOP"
-map_table_OMOP_synonyms['type'] = 'synonym'
-map_table_OMOP_synonyms = map_table_OMOP_synonyms[['concept_id', 'source', 'source_id', 'type', 'name']]
+OMOP_synonyms_std_pairs['source_id'] = OMOP_synonyms_std_pairs['concept_id']
+OMOP_synonyms_std_pairs['source'] = "OMOP"
+OMOP_synonyms_std_pairs['type'] = 'synonym'
+OMOP_synonyms_std_pairs = OMOP_synonyms_std_pairs[['concept_id', 'source', 'source_id', 'type', 'name']]
 
-tracedf(map_table_OMOP_synonyms)
+tracedf(OMOP_synonyms_std_pairs)
 #> DataFrame dimensions: 4134188 rows × 5 columns
 #> Column names:
 #> ['concept_id', 'source', 'source_id', 'type', 'name']
 #> Estimated memory usage: 964.03 MB
 
-map_table_OMOP = pd.concat(
-    [map_table_OMOP_nonstd, map_table_OMOP_synonyms],
+OMOP_pairs = pd.concat(
+    [OMOP_nonstd_std_pairs, OMOP_synonyms_std_pairs],
     ignore_index=True
 ).drop_duplicates(subset=['concept_id', 'name']).reset_index(drop=True)
 
 
-map_table_OMOP.to_feather('data/matching/map_table_OMOP.feather')
-tracedf(map_table_OMOP)
+OMOP_pairs.to_feather('data/matching/OMOP_pairs.feather')
+tracedf(OMOP_pairs)
 #> DataFrame dimensions: 6384688 rows × 5 columns
 #> Column names:
 #> ['concept_id', 'source', 'source_id', 'type', 'name']

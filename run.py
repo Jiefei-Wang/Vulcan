@@ -8,7 +8,7 @@ with open('reload_library.py') as f:
 ## Basic data conversion
 ## Only need to run once
 ########################
-with open('scripts/base_data/1_data_conversion.py') as f:
+with open('scripts/data/1_data_conversion.py') as f:
     exec(f.read())
 
 
@@ -18,17 +18,14 @@ with open('scripts/base_data/1_data_conversion.py') as f:
 ########################
 from modules.CodeBlockExecutor import execute_and_embed
 
-with open('scripts/matching/1_extract.py') as f:
+with open('scripts/data/matching/1_extract.py') as f:
     exec(f.read())
 
-execute_and_embed('scripts/matching/2_combined.py')
+execute_and_embed('scripts/data/matching/2_combined.py')
 
-execute_and_embed('scripts/matching/3_condition_domain.py')
+execute_and_embed('scripts/data/matching/3_condition_domain.py')
 
-execute_and_embed('scripts/matching/4_train_test_valid.py')
-
-execute_and_embed('scripts/matching/4_false_positive.py')
-
+execute_and_embed('scripts/data/matching/4_train_test_valid.py')
 
 ########################
 ## relation data
@@ -37,10 +34,7 @@ execute_and_embed('scripts/matching/4_false_positive.py')
 
 from modules.CodeBlockExecutor import execute_and_embed
 
-execute_and_embed('scripts/relation/1_positive_relation.py')
-
-
-# execute_and_embed('scripts/relation/2_false_positive.py')
+execute_and_embed('scripts/data/relation/1_positive_relation.py')
 
 
 ########################
@@ -50,12 +44,12 @@ execute_and_embed('scripts/relation/1_positive_relation.py')
 from modules.CodeBlockExecutor import execute_and_embed
 
 
-with open('scripts/ML/1_train.py', encoding="UTF-8") as f:
+with open('scripts/ML/1_create_model.py', encoding="UTF-8") as f:
     exec(f.read())
 
 
-with open('scripts/ML/2_test.py', encoding="UTF-8") as f:
-    exec(f.read())
+
+
 
 ########################
 ## sanity check

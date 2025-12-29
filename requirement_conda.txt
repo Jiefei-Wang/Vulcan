@@ -1,0 +1,10 @@
+scipy
+pandas
+duckdb
+transformers
+tqdm
+numpy
+pyarrow
+wandb
+datasets
+faiss-gpu

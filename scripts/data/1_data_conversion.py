@@ -24,6 +24,9 @@ concept_relationship = pd.read_csv(os.path.join(omop_root, 'CONCEPT_RELATIONSHIP
 concept_synonym = pd.read_csv(os.path.join(omop_root, 'CONCEPT_SYNONYM.csv'), delimiter='\t', low_memory=False, na_filter=False)
 concept_ancestor = pd.read_csv(os.path.join(omop_root, 'CONCEPT_ANCESTOR.csv'), delimiter='\t', low_memory=False, na_filter=False)
 
+if not os.path.exists(omop_clean_root):
+    os.makedirs(omop_clean_root)
+
 concept.to_feather(os.path.join(omop_clean_root, 'concept.feather'))
 concept_relationship.to_feather(os.path.join(omop_clean_root, 'concept_relationship.feather'))
 concept_synonym.to_feather(os.path.join(omop_clean_root, 'concept_synonym.feather'))
@@ -47,53 +50,5 @@ std_bridge = concept_relationship[concept_relationship.relationship_id=='Maps to
 
 ## Combine the standard and non-standard concepts
 std_bridge.to_feather(os.path.join(omop_clean_root, 'std_bridge.feather'))
-
-
-
-#############################
-## UMLS data
-#############################
-logger.log("Loading UMLS tables")
-def read_mrconso(mrconso_path):
-    mrconso_columns = [
-        "CUI", "LAT", "TS", "LUI", "STT", "SUI", "ISPREF", "AUI", "SAUI", "SCUI",
-        "SDUI", "SAB", "TTY", "CODE", "STR", "SRL", "SUPPRESS", "CVF"
-    ]
-    mrconso_df = pd.read_csv(
-        mrconso_path, delimiter="|", names=mrconso_columns, dtype=str, header=None, index_col=False
-    )
-    # Drop the last empty column caused by the trailing delimiter
-    mrconso_df = mrconso_df.drop(columns=[mrconso_df.columns[-1]])
-    return mrconso_df
-
-
-# Load UMLS MRDEF.RRF (definitions)
-def read_mrdef(umls_def_path):
-    umls_def_columns = ["CUI", "AUI", "ATUI", "SATUI", "SAB", "DEF", "SUPPRESS", "CVF"]
-    UMLS_def = pd.read_csv(
-        umls_def_path, delimiter="|", names=umls_def_columns, dtype=str, header=None, index_col=False
-    )
-    # Drop the last empty column
-    UMLS_def = UMLS_def.drop(columns=[UMLS_def.columns[-1]])
-    return UMLS_def
-
-
-umls_root = 'data/UMLS_raw'
-umls_clean_root = 'data/UMLS_feather'
-
-mrconso_path = os.path.join(umls_root, 'MRCONSO.RRF')
-umls_def_path = os.path.join(umls_root, 'MRDEF.RRF')
-mrconso = read_mrconso(mrconso_path) # Reads UMLS concept names and relationships
-mrdef_df = read_mrdef(umls_def_path) # Reads UMLS concept definitions
-
-mrconso_df = mrconso[['CUI', 'SAB', 'CODE', 'STR']]
-
-
-## create if not exist
-if not os.path.exists(umls_clean_root):
-    os.makedirs(umls_clean_root)
-
-mrconso_df.to_feather(os.path.join(umls_clean_root, 'mrconso_df.feather'))
-mrdef_df.to_feather(os.path.join(umls_clean_root, 'mrdef_df.feather'))
 
 logger.done()
