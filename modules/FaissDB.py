@@ -23,7 +23,7 @@ def delete_repository(repos='default'):
     if repos in GLOBAL_SPACE:
         del GLOBAL_SPACE[repos]
 
-def build_index(model, corpus_ids, corpus_names, corpus_embeddings=None, repos='default'):
+def build_index(model, corpus_ids, corpus_names, corpus_embeddings=None, repos='default', use_gpu=True):
     """
     Args:
         model: SentenceTransformer model to use for embeddings
@@ -67,9 +67,16 @@ def build_index(model, corpus_ids, corpus_names, corpus_embeddings=None, repos='
     # faiss_index.hnsw.efSearch = 50         # default is 16
     # faiss_index.add(corpus_embeddings.astype('float32')) 
     
-    
-    faiss_index = faiss.IndexHNSWFlat(dimension, faiss.ScalarQuantizer.QT_fp16,faiss.METRIC_INNER_PRODUCT)
-    faiss_index.add(corpus_embeddings.astype('float16')) 
+    if use_gpu:
+        res = faiss.StandardGpuResources()
+        config = faiss.GpuIndexFlatConfig()
+        config.useFloat16 = True 
+        config.device = 0
+        faiss_index = faiss.GpuIndexFlatIP(res, dimension, config)
+        faiss_index.add(corpus_embeddings)
+    else:
+        faiss_index = faiss.IndexHNSWFlat(dimension, faiss.ScalarQuantizer.QT_fp16,faiss.METRIC_INNER_PRODUCT)
+        faiss_index.add(corpus_embeddings.astype('float16')) 
     
     
     GLOBAL_SPACE[repos]['is_initialized'] = True
@@ -100,7 +107,7 @@ def search_similar(query_ids, query_names, query_embeddings=None, top_k=5, repos
     
     embeddings = query_embeddings.astype('float16')
     # faiss_index.nprobe = nprobe 
-    batch_size = 1024
+    batch_size = 1024*16
     scores, indices = [], []
     for i in tqdm(range(0, len(embeddings), batch_size), desc="Searching"):
         batch_embeddings = embeddings[i:i + batch_size]
@@ -113,18 +120,46 @@ def search_similar(query_ids, query_names, query_embeddings=None, top_k=5, repos
     # turn indices into concept_id
     corpus_df = GLOBAL_SPACE[repos]['corpus_df']
 
-    search_results = pd.DataFrame({
+    # search_results = pd.DataFrame({
+    #     'query_id': query_ids,
+    #     'query_name': query_names,
+    #     'top_k_indices': indices,
+    #     'score': scores
+    # }).explode(['top_k_indices', 'score']).reset_index(drop=True)
+    
+
+    # search_results = duckdb.query("""
+    #     SELECT query_id, query_name, corpus_id, corpus_name, score
+    #     FROM search_results
+    #     JOIN corpus_df ON search_results.top_k_indices = corpus_df.index
+    # """).df()
+    
+    # 1. Create a compact DataFrame (without exploding) to serve as the input table
+    input_df = pd.DataFrame({
         'query_id': query_ids,
         'query_name': query_names,
         'top_k_indices': indices,
         'score': scores
-    }).explode(['top_k_indices', 'score']).reset_index(drop=True)
-    
+    })
 
+    # 2. Use DuckDB to Unnest and Join in one go
     search_results = duckdb.query("""
-        SELECT query_id, query_name, corpus_id, corpus_name, score
-        FROM search_results
-        JOIN corpus_df ON search_results.top_k_indices = corpus_df.index
+        SELECT 
+            t.query_id, 
+            t.query_name, 
+            c.corpus_id, 
+            c.corpus_name, 
+            t.score
+        FROM (
+            -- Unnesting in the SELECT clause "zips" the two lists together
+            SELECT 
+                query_id, 
+                query_name, 
+                UNNEST(top_k_indices) AS idx, 
+                UNNEST(score) AS score
+            FROM input_df
+        ) t
+        JOIN corpus_df c ON t.idx = c.index
     """).df()
     
     return search_results

@@ -31,7 +31,12 @@ def evaluate_embedding_similarity_with_mrr(model, data, threshold=0.8):
     return metrics
 
 
-def evaluate_model(model_name, model, query_concepts, target_concepts, target_embedding, query_positive_mapping):
+def evaluate_model(
+    model_name, model, 
+    query_concepts, 
+    target_concepts, 
+    target_embedding, 
+    query_positive_mapping):
     top_k = 100
     model_emb = build_index(
         model = model, 
