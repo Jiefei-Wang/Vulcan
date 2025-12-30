@@ -51,7 +51,7 @@ tracedf(matching_pairs_train)
 #> DataFrame dimensions: 535158 rows × 7 columns
 #> Column names:
 #> ['concept_id', 'concept_name', 'source', 'source_id', 'type', 'name_id', 'name']
-#> Estimated memory usage: 205.11 MB
+#> Estimated memory usage: 205.10 MB
 
 tracedf(matching_pairs_valid)
 #> DataFrame dimensions: 5000 rows × 7 columns
@@ -63,4 +63,4 @@ tracedf(matching_pairs_test)
 #> DataFrame dimensions: 5000 rows × 7 columns
 #> Column names:
 #> ['concept_id', 'concept_name', 'source', 'source_id', 'type', 'name_id', 'name']
-#> Estimated memory usage: 1.91 MB
+#> Estimated memory usage: 1.92 MB

@@ -43,10 +43,7 @@ execute_and_embed('scripts/data/relation/1_positive_relation.py')
 ########################
 from modules.CodeBlockExecutor import execute_and_embed
 
-
-with open('scripts/ML/1_create_model.py', encoding="UTF-8") as f:
-    exec(f.read())
-
+execute_and_embed('scripts/ML/1_create_model.py')
 
 
 

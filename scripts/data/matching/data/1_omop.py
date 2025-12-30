@@ -70,7 +70,7 @@ tracedf(OMOP_synonyms_std_pairs)
 #> DataFrame dimensions: 4134188 rows × 5 columns
 #> Column names:
 #> ['concept_id', 'source', 'source_id', 'type', 'name']
-#> Estimated memory usage: 964.03 MB
+#> Estimated memory usage: 1.04 GB
 
 OMOP_pairs = pd.concat(
     [OMOP_nonstd_std_pairs, OMOP_synonyms_std_pairs],
@@ -83,6 +83,6 @@ tracedf(OMOP_pairs)
 #> DataFrame dimensions: 6384688 rows × 5 columns
 #> Column names:
 #> ['concept_id', 'source', 'source_id', 'type', 'name']
-#> Estimated memory usage: 1.45 GB
+#> Estimated memory usage: 1.60 GB
 
 logger.done()

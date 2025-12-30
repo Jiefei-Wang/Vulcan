@@ -1,7 +1,6 @@
 import pandas as pd
 import os
 from modules.timed_logger import logger
-from sklearn.model_selection import train_test_split
 from modules.CodeBlockExecutor import trace, tracedf
 
 logger.reset_timer()
