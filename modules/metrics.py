@@ -31,7 +31,12 @@ def evaluate_embedding_similarity_with_mrr(model, data, threshold=0.8):
     return metrics
 
 
-def evaluate_model(model_name, model, query_concepts, target_concepts, target_embedding, query_positive_mapping):
+def evaluate_model(
+    model_name, model, 
+    query_concepts, 
+    target_concepts, 
+    target_embedding, 
+    query_positive_mapping):
     top_k = 100
     model_emb = build_index(
         model = model, 
@@ -43,11 +48,16 @@ def evaluate_model(model_name, model, query_concepts, target_concepts, target_em
 
     model_top = search_similar(
         query_ids = query_concepts.name_id, 
-        query_names = query_concepts.sentence2, 
+        query_names = query_concepts.name, 
         top_k=top_k, 
         repos=model_name
         )
-
+    query_positive_mapping = query_positive_mapping[["concept_id", "name_id"]].rename(columns={
+        'concept_id': 'corpus_id',
+        'name_id': 'query_id',
+    })
+    query_positive_mapping['label'] = 1
+    
     model_top = model_top.merge(
         query_positive_mapping,
         on=['query_id', 'corpus_id'],
